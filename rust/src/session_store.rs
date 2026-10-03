@@ -48,6 +48,7 @@ impl Drop for SavedSession {
 pub(crate) trait Secrets {
     fn read(&self, id: &str) -> Result<Option<Zeroizing<String>>, SessionError>;
     fn write(&self, id: &str, value: &str) -> Result<(), SessionError>;
+    fn delete(&self, id: &str) -> Result<(), SessionError>;
 }
 
 pub(crate) struct OsSecrets;
@@ -63,6 +64,15 @@ impl Secrets for OsSecrets {
                 Ok(Some(Zeroizing::new(text.to_owned())))
             }
             Err(keyring::Error::NoEntry) => Ok(None),
+            Err(_) => Err(SessionError::SecureStorage),
+        }
+    }
+
+    fn delete(&self, id: &str) -> Result<(), SessionError> {
+        let entry = keyring::Entry::new(SERVICE, id).map_err(|_| SessionError::SecureStorage)?;
+        // Ausência já satisfaz a remoção; indisponibilidade do cofre exige retry.
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(_) => Err(SessionError::SecureStorage),
         }
     }
@@ -131,6 +141,43 @@ impl<S: Secrets> SessionStore<S> {
         Ok(Some(saved))
     }
 
+    pub(crate) fn remove_restoration(&self, id: &str) -> Result<(), SessionError> {
+        self.store_path(id)?;
+        // O cofre reúne sessão e passphrase numa só entrada. Apagá-la primeiro
+        // impede restauração mesmo se a retirada durável do manifest falhar.
+        // Mantemos o ID no cliente para retry sem reler segredos já removidos.
+        self.secrets.delete(id)?;
+        let active = self.root.join("active-session.json");
+        match fs::read(&active) {
+            Ok(bytes) => {
+                let manifest: Manifest =
+                    serde_json::from_slice(&bytes).map_err(|_| SessionError::CorruptedSession)?;
+                if manifest.version != 1 || manifest.store_id != id {
+                    return Err(SessionError::CorruptedSession);
+                }
+                fs::remove_file(active).map_err(|_| SessionError::Persistence)?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(SessionError::Persistence),
+        }
+        #[cfg(unix)]
+        fs::File::open(&self.root)
+            .and_then(|dir| dir.sync_all())
+            .map_err(|_| SessionError::Persistence)?;
+        Ok(())
+    }
+
+    pub(crate) fn remove_store(&self, id: &str) -> Result<(), SessionError> {
+        // Só chamamos após fechar os stores do SDK e descartar o cliente.
+        // Nunca removemos a raiz nem stores de outras tentativas/contas.
+        let path = self.store_path(id)?;
+        match fs::remove_dir_all(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(_) => Err(SessionError::Persistence),
+        }
+    }
+
     pub(crate) fn prepare(&self) -> Result<(String, Zeroizing<String>, PathBuf), SessionError> {
         let id = random_hex(16)?;
         let passphrase = Zeroizing::new(random_hex(32)?);
@@ -143,8 +190,8 @@ impl<S: Secrets> SessionStore<S> {
         let encoded =
             Zeroizing::new(serde_json::to_string(saved).map_err(|_| SessionError::Internal)?);
         // O cofre precisa confirmar a gravação antes do ponto de publicação em disco.
-        // Entradas/pastas órfãs de falhas permanecem recuperáveis; logout futuro deverá
-        // enumerar stores e remover suas entradas, além do manifest e cliente em memória.
+        // Órfãos de tentativas não publicadas ficam para limpeza futura; logout
+        // remove somente os recursos da sessão ativa, sem enumerar outras contas.
         self.secrets.write(&saved.store_id, &encoded)?;
         let manifest = serde_json::to_vec(&Manifest {
             version: 1,
@@ -236,6 +283,7 @@ mod tests {
         entries: RefCell<HashMap<String, String>>,
         fail_read: Cell<bool>,
         fail_write: Cell<bool>,
+        fail_delete: Cell<bool>,
     }
     impl Secrets for FakeSecrets {
         fn read(&self, id: &str) -> Result<Option<Zeroizing<String>>, SessionError> {
@@ -243,6 +291,13 @@ mod tests {
                 return Err(SessionError::SecureStorage);
             }
             Ok(self.entries.borrow().get(id).cloned().map(Zeroizing::new))
+        }
+        fn delete(&self, id: &str) -> Result<(), SessionError> {
+            if self.fail_delete.get() {
+                return Err(SessionError::SecureStorage);
+            }
+            self.entries.borrow_mut().remove(id);
+            Ok(())
         }
         fn write(&self, id: &str, value: &str) -> Result<(), SessionError> {
             if self.fail_write.get() {
@@ -287,6 +342,87 @@ mod tests {
                 refresh_token: None,
             },
         }
+    }
+
+    #[test]
+    fn logout_removes_only_active_resources_and_restart_is_empty() {
+        let fixture = Fixture::new();
+        let active = fixture.saved();
+        let other = fixture.saved();
+        fixture.0.persist(&active).unwrap();
+        fixture
+            .0
+            .secrets
+            .write(&other.store_id, "synthetic-other-entry")
+            .unwrap();
+        fixture.0.remove_restoration(&active.store_id).unwrap();
+        fixture.0.remove_store(&active.store_id).unwrap();
+        assert!(fixture.0.load().unwrap().is_none());
+        assert!(fixture.0.secrets.read(&active.store_id).unwrap().is_none());
+        assert!(!fixture.0.store_path(&active.store_id).unwrap().exists());
+        assert!(fixture.0.store_path(&other.store_id).unwrap().exists());
+        assert!(fixture.0.secrets.read(&other.store_id).unwrap().is_some());
+        // Ausência de entrada e arquivos é idempotente, inclusive após retry.
+        fixture.0.remove_restoration(&active.store_id).unwrap();
+        fixture.0.remove_store(&active.store_id).unwrap();
+        fixture.0.persist(&other).unwrap();
+        assert_eq!(fixture.0.load().unwrap().unwrap().store_id, other.store_id);
+    }
+
+    #[test]
+    fn credential_failure_preserves_manifest_and_retry_removes_session() {
+        let fixture = Fixture::new();
+        let active = fixture.saved();
+        fixture.0.persist(&active).unwrap();
+        fixture.0.secrets.fail_delete.set(true);
+        assert_eq!(
+            fixture.0.remove_restoration(&active.store_id),
+            Err(SessionError::SecureStorage)
+        );
+        assert!(fixture.0.load().unwrap().is_some());
+        fixture.0.secrets.fail_delete.set(false);
+        fixture.0.remove_restoration(&active.store_id).unwrap();
+        assert!(fixture.0.load().unwrap().is_none());
+    }
+
+    #[test]
+    fn manifest_failure_never_reports_success_and_does_not_delete_other_manifest() {
+        let fixture = Fixture::new();
+        let active = fixture.saved();
+        fixture.0.persist(&active).unwrap();
+        fs::remove_file(fixture.0.root.join("active-session.json")).unwrap();
+        fs::create_dir(fixture.0.root.join("active-session.json")).unwrap();
+        assert_eq!(
+            fixture.0.remove_restoration(&active.store_id),
+            Err(SessionError::Persistence)
+        );
+        assert!(fixture.0.secrets.read(&active.store_id).unwrap().is_none());
+        fs::remove_dir(fixture.0.root.join("active-session.json")).unwrap();
+        fixture.0.remove_restoration(&active.store_id).unwrap();
+        let other = fixture.saved();
+        fixture.0.persist(&other).unwrap();
+        assert_eq!(
+            fixture.0.remove_restoration(&active.store_id),
+            Err(SessionError::CorruptedSession)
+        );
+        assert_eq!(fixture.0.load().unwrap().unwrap().store_id, other.store_id);
+    }
+
+    #[test]
+    fn store_failure_cannot_restore_after_credential_and_manifest_removal() {
+        let fixture = Fixture::new();
+        let active = fixture.saved();
+        fixture.0.persist(&active).unwrap();
+        fixture.0.remove_restoration(&active.store_id).unwrap();
+        let path = fixture.0.store_path(&active.store_id).unwrap();
+        fs::remove_dir(&path).unwrap();
+        fs::write(&path, b"synthetic-obstruction").unwrap();
+        assert_eq!(
+            fixture.0.remove_store(&active.store_id),
+            Err(SessionError::Persistence)
+        );
+        assert!(fixture.0.load().unwrap().is_none());
+        assert!(fixture.0.secrets.read(&active.store_id).unwrap().is_none());
     }
 
     #[test]
@@ -453,5 +589,15 @@ mod tests {
                     .any(|window| window == secret.as_bytes()));
             }
         }
+        // Verifica o fechamento real das três bases antes da exclusão da unidade
+        // de armazenamento; este teste continua isolado do cofre e da rede.
+        reopened.state_store().close().await.unwrap();
+        reopened.event_cache_store().close().await.unwrap();
+        reopened.media_store().close().await.unwrap();
+        drop(reopened);
+        fixture.0.remove_restoration(&saved.store_id).unwrap();
+        fixture.0.remove_store(&saved.store_id).unwrap();
+        assert!(fixture.0.load().unwrap().is_none());
+        assert!(!path.exists());
     }
 }

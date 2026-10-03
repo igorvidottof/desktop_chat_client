@@ -15,6 +15,7 @@ Widget startupApp(
   SessionInitializer initialize, {
   Future<List<ConversationSummary>> Function()? rooms,
 }) => MyApp(
+  logoutAction: () async => throw LogoutError.internal,
   initialize: initialize,
   probe: (_) async => throw ProbeError.internal,
   authenticate: (_, _, _) async => restoredAccount,

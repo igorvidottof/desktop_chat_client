@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1532390094;
+  int get rustContentHash => 527472710;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -85,6 +85,8 @@ abstract class RustLibApi extends BaseApi {
     required String username,
     required String password,
   });
+
+  Future<LogoutResult> crateApiSimpleLogout();
 
   Future<ServerInfo> crateApiSimpleProbeServer({required String address});
 }
@@ -188,6 +190,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<LogoutResult> crateApiSimpleLogout() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 4,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_logout_result,
+          decodeErrorData: sse_decode_logout_error,
+        ),
+        constMeta: kCrateApiSimpleLogoutConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSimpleLogoutConstMeta =>
+      const TaskConstMeta(debugName: "logout", argNames: []);
+
+  @override
   Future<ServerInfo> crateApiSimpleProbeServer({required String address}) {
     return handler.executeNormal(
       NormalTask(
@@ -197,7 +226,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 5,
             port: port_,
           );
         },
@@ -289,6 +318,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LogoutError dco_decode_logout_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return LogoutError.values[raw as int];
+  }
+
+  @protected
+  LogoutResult dco_decode_logout_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return LogoutResult(
+      remoteStatus: dco_decode_remote_logout_status(arr[0]),
+      storeCleanupPending: dco_decode_bool(arr[1]),
+    );
+  }
+
+  @protected
   AccountSummary? dco_decode_opt_box_autoadd_account_summary(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_account_summary(raw);
@@ -298,6 +345,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ProbeError dco_decode_probe_error(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return ProbeError.values[raw as int];
+  }
+
+  @protected
+  RemoteLogoutStatus dco_decode_remote_logout_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return RemoteLogoutStatus.values[raw as int];
   }
 
   @protected
@@ -423,6 +476,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LogoutError sse_decode_logout_error(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return LogoutError.values[inner];
+  }
+
+  @protected
+  LogoutResult sse_decode_logout_result(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_remoteStatus = sse_decode_remote_logout_status(deserializer);
+    var var_storeCleanupPending = sse_decode_bool(deserializer);
+    return LogoutResult(
+      remoteStatus: var_remoteStatus,
+      storeCleanupPending: var_storeCleanupPending,
+    );
+  }
+
+  @protected
   AccountSummary? sse_decode_opt_box_autoadd_account_summary(
     SseDeserializer deserializer,
   ) {
@@ -440,6 +511,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return ProbeError.values[inner];
+  }
+
+  @protected
+  RemoteLogoutStatus sse_decode_remote_logout_status(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return RemoteLogoutStatus.values[inner];
   }
 
   @protected
@@ -559,6 +639,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_logout_error(LogoutError self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_logout_result(LogoutResult self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_remote_logout_status(self.remoteStatus, serializer);
+    sse_encode_bool(self.storeCleanupPending, serializer);
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_account_summary(
     AccountSummary? self,
     SseSerializer serializer,
@@ -573,6 +666,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void sse_encode_probe_error(ProbeError self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_remote_logout_status(
+    RemoteLogoutStatus self,
+    SseSerializer serializer,
+  ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
   }

@@ -14,6 +14,7 @@ const account = AccountSummary(
 Finder field(String label) => find.widgetWithText(TextField, label);
 
 Widget loginApp(PasswordLogin authenticate) => MyApp(
+  logoutAction: () async => throw LogoutError.internal,
   initialize: () async => const SessionState(account: null),
   loadConversations: () async => [],
   probe: (_) async => throw ProbeError.internal,

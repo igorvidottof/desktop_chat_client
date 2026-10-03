@@ -108,6 +108,7 @@ void main() {
     var calls = 0;
     await tester.pumpWidget(
       MyApp(
+        logoutAction: () async => throw LogoutError.internal,
         initialize: () async => const SessionState(account: null),
         probe: (_) async => throw ProbeError.internal,
         authenticate:

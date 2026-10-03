@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1532390094;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 527472710;
 
 // Section: executor
 
@@ -152,6 +152,41 @@ fn wire__crate__api__simple__login_impl(
                             api_password,
                         )
                         .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__simple__logout_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "logout",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::simple::LogoutError>(
+                    (move || async move {
+                        let output_ok = crate::api::simple::logout().await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -312,6 +347,35 @@ impl SseDecode for crate::api::simple::LoginError {
     }
 }
 
+impl SseDecode for crate::api::simple::LogoutError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::simple::LogoutError::NotAuthenticated,
+            1 => crate::api::simple::LogoutError::LogoutInProgress,
+            2 => crate::api::simple::LogoutError::AuthenticationOperationInProgress,
+            3 => crate::api::simple::LogoutError::SecureStorage,
+            4 => crate::api::simple::LogoutError::LocalCleanup,
+            5 => crate::api::simple::LogoutError::Internal,
+            _ => unreachable!("Invalid variant for LogoutError: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::simple::LogoutResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_remoteStatus =
+            <crate::api::simple::RemoteLogoutStatus>::sse_decode(deserializer);
+        let mut var_storeCleanupPending = <bool>::sse_decode(deserializer);
+        return crate::api::simple::LogoutResult {
+            remote_status: var_remoteStatus,
+            store_cleanup_pending: var_storeCleanupPending,
+        };
+    }
+}
+
 impl SseDecode for Option<crate::api::simple::AccountSummary> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -336,6 +400,23 @@ impl SseDecode for crate::api::simple::ProbeError {
             3 => crate::api::simple::ProbeError::UnusableHomeserver,
             4 => crate::api::simple::ProbeError::Internal,
             _ => unreachable!("Invalid variant for ProbeError: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::simple::RemoteLogoutStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::simple::RemoteLogoutStatus::Confirmed,
+            1 => crate::api::simple::RemoteLogoutStatus::AlreadyInvalid,
+            2 => crate::api::simple::RemoteLogoutStatus::Network,
+            3 => crate::api::simple::RemoteLogoutStatus::Tls,
+            4 => crate::api::simple::RemoteLogoutStatus::RateLimited,
+            5 => crate::api::simple::RemoteLogoutStatus::Server,
+            6 => crate::api::simple::RemoteLogoutStatus::Internal,
+            _ => unreachable!("Invalid variant for RemoteLogoutStatus: {}", inner),
         };
     }
 }
@@ -400,7 +481,8 @@ fn pde_ffi_dispatcher_primary_impl(
         1 => wire__crate__api__simple__initialize_session_impl(port, ptr, rust_vec_len, data_len),
         2 => wire__crate__api__simple__list_conversations_impl(port, ptr, rust_vec_len, data_len),
         3 => wire__crate__api__simple__login_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__simple__probe_server_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__simple__logout_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__simple__probe_server_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -520,6 +602,52 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::LoginError>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::simple::LogoutError {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::NotAuthenticated => 0.into_dart(),
+            Self::LogoutInProgress => 1.into_dart(),
+            Self::AuthenticationOperationInProgress => 2.into_dart(),
+            Self::SecureStorage => 3.into_dart(),
+            Self::LocalCleanup => 4.into_dart(),
+            Self::Internal => 5.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::simple::LogoutError
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::LogoutError>
+    for crate::api::simple::LogoutError
+{
+    fn into_into_dart(self) -> crate::api::simple::LogoutError {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::simple::LogoutResult {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.remote_status.into_into_dart().into_dart(),
+            self.store_cleanup_pending.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::simple::LogoutResult
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::LogoutResult>
+    for crate::api::simple::LogoutResult
+{
+    fn into_into_dart(self) -> crate::api::simple::LogoutResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::simple::ProbeError {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -540,6 +668,32 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::ProbeError>
     for crate::api::simple::ProbeError
 {
     fn into_into_dart(self) -> crate::api::simple::ProbeError {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::simple::RemoteLogoutStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Confirmed => 0.into_dart(),
+            Self::AlreadyInvalid => 1.into_dart(),
+            Self::Network => 2.into_dart(),
+            Self::Tls => 3.into_dart(),
+            Self::RateLimited => 4.into_dart(),
+            Self::Server => 5.into_dart(),
+            Self::Internal => 6.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::simple::RemoteLogoutStatus
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::RemoteLogoutStatus>
+    for crate::api::simple::RemoteLogoutStatus
+{
+    fn into_into_dart(self) -> crate::api::simple::RemoteLogoutStatus {
         self
     }
 }
@@ -714,6 +868,34 @@ impl SseEncode for crate::api::simple::LoginError {
     }
 }
 
+impl SseEncode for crate::api::simple::LogoutError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::simple::LogoutError::NotAuthenticated => 0,
+                crate::api::simple::LogoutError::LogoutInProgress => 1,
+                crate::api::simple::LogoutError::AuthenticationOperationInProgress => 2,
+                crate::api::simple::LogoutError::SecureStorage => 3,
+                crate::api::simple::LogoutError::LocalCleanup => 4,
+                crate::api::simple::LogoutError::Internal => 5,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::simple::LogoutResult {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::simple::RemoteLogoutStatus>::sse_encode(self.remote_status, serializer);
+        <bool>::sse_encode(self.store_cleanup_pending, serializer);
+    }
+}
+
 impl SseEncode for Option<crate::api::simple::AccountSummary> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -734,6 +916,27 @@ impl SseEncode for crate::api::simple::ProbeError {
                 crate::api::simple::ProbeError::Tls => 2,
                 crate::api::simple::ProbeError::UnusableHomeserver => 3,
                 crate::api::simple::ProbeError::Internal => 4,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::simple::RemoteLogoutStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::simple::RemoteLogoutStatus::Confirmed => 0,
+                crate::api::simple::RemoteLogoutStatus::AlreadyInvalid => 1,
+                crate::api::simple::RemoteLogoutStatus::Network => 2,
+                crate::api::simple::RemoteLogoutStatus::Tls => 3,
+                crate::api::simple::RemoteLogoutStatus::RateLimited => 4,
+                crate::api::simple::RemoteLogoutStatus::Server => 5,
+                crate::api::simple::RemoteLogoutStatus::Internal => 6,
                 _ => {
                     unimplemented!("");
                 }

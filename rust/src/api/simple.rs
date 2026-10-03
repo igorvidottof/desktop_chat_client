@@ -101,3 +101,38 @@ pub enum SessionError {
 pub async fn initialize_session() -> Result<SessionState, SessionError> {
     crate::auth::initialize().await
 }
+
+/// Sucesso local confirmado; avisos não incluem detalhes remotos nem segredos.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogoutResult {
+    pub remote_status: RemoteLogoutStatus,
+    pub store_cleanup_pending: bool,
+}
+
+/// A sessão já revogada também satisfaz o encerramento remoto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteLogoutStatus {
+    Confirmed,
+    AlreadyInvalid,
+    Network,
+    Tls,
+    RateLimited,
+    Server,
+    Internal,
+}
+
+/// Err nunca afirma sucesso local; o cliente permanece reservado para nova tentativa.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogoutError {
+    NotAuthenticated,
+    LogoutInProgress,
+    AuthenticationOperationInProgress,
+    SecureStorage,
+    LocalCleanup,
+    Internal,
+}
+
+/// Encerra a sessão remota quando possível e remove a capacidade local de restauração.
+pub async fn logout() -> Result<LogoutResult, LogoutError> {
+    crate::auth::logout().await
+}

@@ -4,7 +4,8 @@ use matrix_sdk::{ruma::api::error::ErrorKind, Client, HttpError};
 
 use crate::{
     api::simple::{
-        AccountSummary, ConversationError, LoginError, ProbeError, SessionError, SessionState,
+        AccountSummary, ConversationError, LoginError, LogoutError, LogoutResult, ProbeError,
+        RemoteLogoutStatus, SessionError, SessionState,
     },
     matrix,
     session_store::{self, SavedSession, SessionStore},
@@ -12,12 +13,29 @@ use crate::{
 
 // O contêiner privado possui o único cliente ativo. Nenhum handle atravessa FRB.
 // Login e restauração convergem aqui; somente a operação de salas solicita sync único.
-static AUTH: LazyLock<AuthState<Client>> = LazyLock::new(AuthState::default);
+static AUTH: LazyLock<AuthState<AuthenticatedClient>> = LazyLock::new(AuthState::default);
+
+// Cada operação de salas mantém uma leitura até liberar todos os handles do SDK.
+// Logout reserva AUTH primeiro e aguarda exclusividade sem bloquear seu mutex.
+pub(crate) static CLIENT_OPERATIONS: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
+
+pub(crate) struct AuthenticatedClient {
+    client: Client,
+    store_id: String,
+}
+
+impl std::ops::Deref for AuthenticatedClient {
+    type Target = Client;
+    fn deref(&self) -> &Client {
+        &self.client
+    }
+}
 
 enum State<T> {
     Idle,
     LoggingIn,
     Restoring,
+    LoggingOut,
     Authenticated(Arc<T>),
 }
 
@@ -56,7 +74,7 @@ impl<T> AuthState<T> {
             match &*state {
                 // Hot restart não precisa ler disco, cofre ou rede novamente.
                 State::Authenticated(client) => return Ok(Some(Arc::clone(client))),
-                State::LoggingIn | State::Restoring => {
+                State::LoggingIn | State::Restoring | State::LoggingOut => {
                     return Err(SessionError::OperationInProgress)
                 }
                 State::Idle => {
@@ -95,6 +113,23 @@ impl<T> AuthState<T> {
         }
     }
 
+    fn begin_logout(&self) -> Result<LogoutAttempt<'_, T>, LogoutError> {
+        let mut state = self.state.lock().map_err(|_| LogoutError::Internal)?;
+        let client = match &*state {
+            State::Idle => return Err(LogoutError::NotAuthenticated),
+            State::LoggingOut => return Err(LogoutError::LogoutInProgress),
+            State::LoggingIn | State::Restoring => {
+                return Err(LogoutError::AuthenticationOperationInProgress)
+            }
+            State::Authenticated(client) => Arc::clone(client),
+        };
+        *state = State::LoggingOut;
+        Ok(LogoutAttempt {
+            owner: self,
+            client: Some(client),
+        })
+    }
+
     fn begin(&self) -> Result<LoginAttempt<'_, T>, LoginError> {
         let mut state = self.state.lock().map_err(|_| LoginError::Internal)?;
         match &*state {
@@ -102,9 +137,148 @@ impl<T> AuthState<T> {
                 *state = State::LoggingIn;
                 Ok(LoginAttempt { owner: self })
             }
-            State::LoggingIn | State::Restoring => Err(LoginError::LoginInProgress),
+            State::LoggingIn | State::Restoring | State::LoggingOut => {
+                Err(LoginError::LoginInProgress)
+            }
             State::Authenticated(_client) => Err(LoginError::AlreadyAuthenticated),
         }
+    }
+}
+
+// A reserva retém a identidade para retry se o cofre/manifest falhar. O cliente
+// deixa de ser acessível a salas imediatamente; somente finish permite novo login.
+struct LogoutAttempt<'a, T> {
+    owner: &'a AuthState<T>,
+    client: Option<Arc<T>>,
+}
+
+impl<T> LogoutAttempt<'_, T> {
+    fn release_client(&mut self) {
+        self.client.take();
+    }
+    fn finish(self) -> Result<(), LogoutError> {
+        let mut state = self.owner.state.lock().map_err(|_| LogoutError::Internal)?;
+        *state = State::Idle;
+        Ok(())
+    }
+}
+
+impl<T> Drop for LogoutAttempt<'_, T> {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.owner.state.lock() {
+            if matches!(*state, State::LoggingOut) {
+                *state = self
+                    .client
+                    .take()
+                    .map(State::Authenticated)
+                    .unwrap_or(State::Idle);
+            }
+        }
+    }
+}
+
+pub(crate) async fn logout() -> Result<LogoutResult, LogoutError> {
+    // A tarefa finita é dona da reserva. Cancelar o await FRB não interrompe
+    // exclusão no cofre/disco nem abandona AUTH no meio da limpeza.
+    tokio::spawn(logout_reserved())
+        .await
+        .map_err(|_| LogoutError::Internal)?
+}
+
+async fn logout_reserved() -> Result<LogoutResult, LogoutError> {
+    let attempt = AUTH.begin_logout()?;
+    let _exclusive = CLIENT_OPERATIONS.write().await;
+    let id = attempt
+        .client
+        .as_ref()
+        .ok_or(LogoutError::Internal)?
+        .store_id
+        .clone();
+    let cleanup_id = id.clone();
+    complete_logout(
+        attempt,
+        |client| async move {
+            match client.matrix_auth().logout().await {
+                Ok(_) => RemoteLogoutStatus::Confirmed,
+                Err(error) => map_remote_logout(&error),
+            }
+        },
+        || async move {
+            session_store::blocking(move || {
+                SessionStore::platform()?.remove_restoration(&cleanup_id)
+            })
+            .await
+            .map_err(|error| match error {
+                SessionError::SecureStorage => LogoutError::SecureStorage,
+                _ => LogoutError::LocalCleanup,
+            })
+        },
+        |client| async move {
+            let state_closed = client.state_store().close().await.is_ok();
+            let cache_closed = client.event_cache_store().close().await.is_ok();
+            let media_closed = client.media_store().close().await.is_ok();
+            state_closed && cache_closed && media_closed
+        },
+        || async move {
+            session_store::blocking(move || SessionStore::platform()?.remove_store(&id))
+                .await
+                .is_ok()
+        },
+    )
+    .await
+}
+
+async fn complete_logout<T, R, L, C, S>(
+    mut attempt: LogoutAttempt<'_, T>,
+    remote: impl FnOnce(Arc<T>) -> R,
+    remove_restoration: impl FnOnce() -> L,
+    close: impl FnOnce(Arc<T>) -> C,
+    remove_store: impl FnOnce() -> S,
+) -> Result<LogoutResult, LogoutError>
+where
+    R: std::future::Future<Output = RemoteLogoutStatus>,
+    L: std::future::Future<Output = Result<(), LogoutError>>,
+    C: std::future::Future<Output = bool>,
+    S: std::future::Future<Output = bool>,
+{
+    // Falha remota é só um aviso: não pode prender o usuário na sessão local.
+    let remote_status = remote(Arc::clone(
+        attempt.client.as_ref().ok_or(LogoutError::Internal)?,
+    ))
+    .await;
+    remove_restoration().await?;
+    // O SDK oferece fechamento explícito das três bases habilitadas. Não apagar
+    // SQLite aberto: se qualquer close falhar, preservar apenas o store cifrado,
+    // já sem tokens/passphrase no cofre, e comunicar limpeza física pendente.
+    let closed = close(Arc::clone(
+        attempt.client.as_ref().ok_or(LogoutError::Internal)?,
+    ))
+    .await;
+    attempt.release_client();
+    let store_cleanup_pending = !closed || !remove_store().await;
+    attempt.finish()?;
+    Ok(LogoutResult {
+        remote_status,
+        store_cleanup_pending,
+    })
+}
+
+fn map_remote_logout(error: &HttpError) -> RemoteLogoutStatus {
+    if let HttpError::Cached(error) = error {
+        return map_remote_logout(error);
+    }
+    if matches!(
+        error.client_api_error_kind(),
+        Some(ErrorKind::MissingToken | ErrorKind::UnknownToken(_))
+    ) {
+        return RemoteLogoutStatus::AlreadyInvalid;
+    }
+    match map_http_error_ref(error, false) {
+        LoginError::Network => RemoteLogoutStatus::Network,
+        LoginError::Tls => RemoteLogoutStatus::Tls,
+        LoginError::RateLimited => RemoteLogoutStatus::RateLimited,
+        LoginError::UnusableHomeserver => RemoteLogoutStatus::Server,
+        _ => RemoteLogoutStatus::Internal,
     }
 }
 
@@ -137,11 +311,11 @@ impl<T> Drop for LoginAttempt<'_, T> {
 
 // O Arc externo permite comparar a identidade do cliente ativo após os awaits.
 // Client::clone também compartilha ClientInner via Arc no SDK 0.19.1; não cria sessão.
-pub(crate) fn authenticated_client() -> Result<Arc<Client>, ConversationError> {
+pub(crate) fn authenticated_client() -> Result<Arc<AuthenticatedClient>, ConversationError> {
     AUTH.snapshot()
 }
 
-pub(crate) fn ensure_current(client: &Arc<Client>) -> Result<(), ConversationError> {
+pub(crate) fn ensure_current(client: &Arc<AuthenticatedClient>) -> Result<(), ConversationError> {
     AUTH.ensure_current(client)
 }
 
@@ -205,7 +379,7 @@ async fn login_reserved(
         let session = client.matrix_auth().session().ok_or(LoginError::Internal)?;
         let saved = SavedSession::new(
             client.homeserver().to_string(),
-            store_id,
+            store_id.clone(),
             passphrase.to_string(),
             session,
         );
@@ -214,7 +388,7 @@ async fn login_reserved(
         session_store::blocking(move || SessionStore::platform()?.persist(&saved))
             .await
             .map_err(map_persistence_error)?;
-        Ok((client, summary))
+        Ok((AuthenticatedClient { client, store_id }, summary))
     })
     .await
 }
@@ -239,6 +413,7 @@ pub(crate) async fn initialize() -> Result<SessionState, SessionError> {
 }
 
 async fn initialize_reserved() -> Result<SessionState, SessionError> {
+    let _operation = CLIENT_OPERATIONS.read().await;
     let client = AUTH
         .initialize(|| async {
             let saved = session_store::blocking(|| SessionStore::platform()?.load()).await?;
@@ -246,8 +421,9 @@ async fn initialize_reserved() -> Result<SessionState, SessionError> {
                 return Ok(None);
             };
             let id = saved.store_id.clone();
+            let path_id = id.clone();
             let path = session_store::blocking(move || {
-                let path = SessionStore::platform()?.store_path(&id)?;
+                let path = SessionStore::platform()?.store_path(&path_id)?;
                 session_store::require_store(&path)?;
                 Ok(path)
             })
@@ -285,11 +461,17 @@ async fn initialize_reserved() -> Result<SessionState, SessionError> {
             }
             // Não apagamos nada em falhas, inclusive rede/TLS. O candidato só vira
             // autoridade após validação; uma nova tentativa reabre a sessão preservada.
-            Ok(Some(client))
+            Ok(Some(AuthenticatedClient {
+                client,
+                store_id: id,
+            }))
         })
         .await?;
     Ok(SessionState {
-        account: client.as_deref().map(account_summary).transpose()?,
+        account: client
+            .as_deref()
+            .map(|client| account_summary(client))
+            .transpose()?,
     })
 }
 
@@ -389,6 +571,167 @@ mod tests {
         client::{session::get_login_types::v3::PasswordLoginType, uiaa::UiaaResponse},
         error::{ErrorBody, FromHttpResponseError, LimitExceededErrorData, StandardErrorBody},
     };
+
+    #[tokio::test]
+    async fn logout_success_offline_and_revoked_all_remove_authority() {
+        for status in [
+            RemoteLogoutStatus::Confirmed,
+            RemoteLogoutStatus::Network,
+            RemoteLogoutStatus::AlreadyInvalid,
+        ] {
+            let auth = AuthState::<u8>::default();
+            auth.begin().unwrap().publish(7).unwrap();
+            let stale = auth.snapshot().unwrap();
+            let weak = Arc::downgrade(&stale);
+            let attempt = auth.begin_logout().unwrap();
+            assert_eq!(
+                auth.ensure_current(&stale),
+                Err(ConversationError::NotAuthenticated)
+            );
+            drop(stale);
+            let result = complete_logout(
+                attempt,
+                |_| std::future::ready(status),
+                || std::future::ready(Ok(())),
+                |_| std::future::ready(true),
+                || {
+                    assert!(weak.upgrade().is_none());
+                    std::future::ready(true)
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(result.remote_status, status);
+            assert!(!result.store_cleanup_pending);
+            assert!(matches!(
+                auth.snapshot(),
+                Err(ConversationError::NotAuthenticated)
+            ));
+            assert!(auth
+                .initialize(|| std::future::ready(Ok(None)))
+                .await
+                .unwrap()
+                .is_none());
+            assert!(auth.begin().is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_local_cleanup_preserves_identity_for_retry() {
+        for error in [LogoutError::SecureStorage, LogoutError::LocalCleanup] {
+            let auth = AuthState::<u8>::default();
+            auth.begin().unwrap().publish(7).unwrap();
+            let original = auth.snapshot().unwrap();
+            let result = complete_logout(
+                auth.begin_logout().unwrap(),
+                |_| std::future::ready(RemoteLogoutStatus::Confirmed),
+                || std::future::ready(Err(error)),
+                |_| async { panic!("não fechar store antes de remover restauração") },
+                || async { panic!("não remover store antes de remover restauração") },
+            )
+            .await;
+            assert_eq!(result, Err(error));
+            assert!(Arc::ptr_eq(&original, &auth.snapshot().unwrap()));
+            assert!(auth.begin_logout().is_ok());
+        }
+    }
+
+    #[tokio::test]
+    async fn physical_store_failure_is_a_warning_after_local_logout() {
+        for closed in [true, false] {
+            let auth = AuthState::<u8>::default();
+            auth.begin().unwrap().publish(7).unwrap();
+            let result = complete_logout(
+                auth.begin_logout().unwrap(),
+                |_| std::future::ready(RemoteLogoutStatus::Network),
+                || std::future::ready(Ok(())),
+                |_| std::future::ready(closed),
+                || {
+                    assert!(closed);
+                    std::future::ready(false)
+                },
+            )
+            .await
+            .unwrap();
+            assert!(result.store_cleanup_pending);
+            assert!(matches!(
+                auth.snapshot(),
+                Err(ConversationError::NotAuthenticated)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn logout_reservation_excludes_lifecycle_operations_and_survives_caller_drop() {
+        let auth = Arc::new(AuthState::<u8>::default());
+        assert!(matches!(
+            auth.begin_logout(),
+            Err(LogoutError::NotAuthenticated)
+        ));
+        let login = auth.begin().unwrap();
+        assert!(matches!(
+            auth.begin_logout(),
+            Err(LogoutError::AuthenticationOperationInProgress)
+        ));
+        drop(login);
+        let mut restoring =
+            Box::pin(auth.initialize(std::future::pending::<Result<Option<u8>, SessionError>>));
+        assert!(poll_once(restoring.as_mut()).is_pending());
+        assert!(matches!(
+            auth.begin_logout(),
+            Err(LogoutError::AuthenticationOperationInProgress)
+        ));
+        drop(restoring);
+        auth.begin().unwrap().publish(7).unwrap();
+        let owner = Arc::clone(&auth);
+        let (started, starting) = tokio::sync::oneshot::channel();
+        let (finish, finishing) = tokio::sync::oneshot::channel();
+        let (done, completed) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let attempt = owner.begin_logout().unwrap();
+            let result = complete_logout(
+                attempt,
+                |_| async {
+                    started.send(()).unwrap();
+                    finishing.await.unwrap();
+                    RemoteLogoutStatus::Confirmed
+                },
+                || std::future::ready(Ok(())),
+                |_| std::future::ready(true),
+                || std::future::ready(true),
+            )
+            .await;
+            done.send(result).unwrap();
+        });
+        starting.await.unwrap();
+        drop(task);
+        assert!(auth.state.try_lock().is_ok());
+        assert!(matches!(
+            auth.begin_logout(),
+            Err(LogoutError::LogoutInProgress)
+        ));
+        assert!(matches!(auth.begin(), Err(LoginError::LoginInProgress)));
+        assert!(matches!(
+            auth.initialize(|| std::future::ready(Ok(None))).await,
+            Err(SessionError::OperationInProgress)
+        ));
+        finish.send(()).unwrap();
+        completed.await.unwrap().unwrap();
+        assert!(matches!(
+            auth.snapshot(),
+            Err(ConversationError::NotAuthenticated)
+        ));
+    }
+
+    #[tokio::test]
+    async fn conversation_lease_must_drain_before_store_cleanup() {
+        let gate = Arc::new(tokio::sync::RwLock::new(()));
+        let read = Arc::clone(&gate).read_owned().await;
+        let mut exclusive = Box::pin(gate.write());
+        assert!(poll_once(exclusive.as_mut()).is_pending());
+        drop(read);
+        assert!(poll_once(exclusive.as_mut()).is_ready());
+    }
 
     #[test]
     fn initialization_distinguishes_empty_persisted_and_native_hot_restart() {
@@ -509,6 +852,32 @@ mod tests {
         finish.send(7).unwrap();
         completed.await.unwrap().unwrap();
         assert_eq!(*auth.snapshot().unwrap(), 7);
+    }
+
+    #[test]
+    fn remote_logout_maps_revocation_rate_limit_and_server_without_details() {
+        use matrix_sdk::ruma::api::error::UnknownTokenErrorData;
+        for (kind, status) in [
+            (ErrorKind::MissingToken, RemoteLogoutStatus::AlreadyInvalid),
+            (
+                ErrorKind::UnknownToken(UnknownTokenErrorData::new()),
+                RemoteLogoutStatus::AlreadyInvalid,
+            ),
+            (
+                ErrorKind::LimitExceeded(LimitExceededErrorData::new()),
+                RemoteLogoutStatus::RateLimited,
+            ),
+            (ErrorKind::Forbidden, RemoteLogoutStatus::Server),
+            (ErrorKind::Unknown, RemoteLogoutStatus::Server),
+        ] {
+            let error = api_error(kind);
+            assert_eq!(map_remote_logout(&error), status);
+            assert_eq!(
+                map_remote_logout(&HttpError::Cached(Arc::new(error))),
+                status
+            );
+            assert!(!format!("{status:?}").contains("untrusted"));
+        }
     }
 
     #[test]

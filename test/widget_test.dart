@@ -110,6 +110,7 @@ void main() {
 }
 
 Widget probeApp({required ServerProbe probe}) => MyApp(
+  logoutAction: () async => throw LogoutError.internal,
   initialize: () async => const SessionState(account: null),
   loadConversations: () async => [],
   probe: probe,

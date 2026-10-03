@@ -10,6 +10,7 @@ Future<void> main() async {
   runApp(
     MyApp(
       initialize: initializeSession,
+      logoutAction: logout,
       loadConversations: listConversations,
       probe: (address) => probeServer(address: address),
       authenticate:
@@ -37,12 +38,14 @@ class MyApp extends StatelessWidget {
   const MyApp({
     super.key,
     required this.initialize,
+    required this.logoutAction,
     required this.probe,
     required this.authenticate,
     required this.loadConversations,
   });
 
   final SessionInitializer initialize;
+  final Future<LogoutResult> Function() logoutAction;
   final ServerProbe probe;
   final PasswordLogin authenticate;
   final ConversationLoader loadConversations;
@@ -56,6 +59,7 @@ class MyApp extends StatelessWidget {
       ),
       home: LoginScreen(
         initialize: initialize,
+        logoutAction: logoutAction,
         probe: probe,
         authenticate: authenticate,
         loadConversations: loadConversations,
@@ -68,12 +72,14 @@ class LoginScreen extends StatefulWidget {
   const LoginScreen({
     super.key,
     required this.initialize,
+    required this.logoutAction,
     required this.probe,
     required this.authenticate,
     required this.loadConversations,
   });
 
   final SessionInitializer initialize;
+  final Future<LogoutResult> Function() logoutAction;
   final ServerProbe probe;
   final PasswordLogin authenticate;
   final ConversationLoader loadConversations;
@@ -87,6 +93,9 @@ class _LoginScreenState extends State<LoginScreen> {
   final _username = TextEditingController();
   final _password = TextEditingController();
   bool _initializing = true;
+  bool _loggingOut = false;
+  LogoutError? _logoutError;
+  String? _logoutNotice;
   SessionError? _sessionError;
   bool _loading = false;
   bool _loggingIn = false;
@@ -152,6 +161,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _loading = true;
       _loggingIn = true;
       _loginError = null;
+      _logoutNotice = null;
       _error = null;
       _info = null;
     });
@@ -184,6 +194,49 @@ class _LoginScreenState extends State<LoginScreen> {
           _loggingIn = false;
         });
       }
+    }
+  }
+
+  Future<void> _logout() async {
+    if (_loading || _loggingOut || _account == null) return;
+    setState(() {
+      _loggingOut = true;
+      _logoutError = null;
+      _info = null;
+      _error = null;
+    });
+    try {
+      final result = await widget.logoutAction();
+      if (!mounted) return;
+      setState(() {
+        _account = null;
+        _sessionError = null;
+        _loginError = null;
+        _username.clear();
+        _password.clear();
+        final remoteConfirmed =
+            result.remoteStatus == RemoteLogoutStatus.confirmed ||
+            result.remoteStatus == RemoteLogoutStatus.alreadyInvalid;
+        _logoutNotice = [
+          if (!remoteConfirmed)
+            'A sessão local foi removida. Não foi possível confirmar a saída no servidor.',
+          if (result.storeCleanupPending)
+            'A sessão não pode ser restaurada, mas a remoção dos dados locais restantes ficou pendente.',
+        ].join(' ');
+      });
+    } on LogoutError catch (error) {
+      if (!mounted) return;
+      if (error == LogoutError.notAuthenticated) {
+        // Reconcilia com Rust quando outro chamador já encerrou a sessão.
+        await _initialize();
+      } else {
+        setState(() => _logoutError = error);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _logoutError = LogoutError.internal);
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
     }
   }
 
@@ -305,8 +358,24 @@ class _LoginScreenState extends State<LoginScreen> {
                   SelectableText('Dispositivo: ${account.deviceId}'),
                   SelectableText(account.homeserverAddress),
                   const SizedBox(height: 16),
-                  ConversationList(load: widget.loadConversations),
+                  FilledButton(
+                    onPressed: _loading || _loggingOut ? null : _logout,
+                    child: const Text('Logout'),
+                  ),
+                  if (_loggingOut) ...[
+                    const CircularProgressIndicator(),
+                    const Text('Saindo…'),
+                  ] else
+                    // Desmontar durante logout invalida callbacks de salas antigas.
+                    ConversationList(load: widget.loadConversations),
                 ],
+                if (_logoutError case final error?)
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(logoutErrorMessage(error)),
+                  ),
+                if (_logoutNotice case final notice? when notice.isNotEmpty)
+                  Semantics(liveRegion: true, child: Text(notice)),
                 if (_loginError case final error?) ...[
                   const SizedBox(height: 16),
                   Semantics(
@@ -316,7 +385,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
                 const SizedBox(height: 16),
                 FilledButton(
-                  onPressed: _loading ? null : _probe,
+                  onPressed: _loading || _loggingOut ? null : _probe,
                   child: const Text('Verificar servidor'),
                 ),
                 if (_loading) ...[
@@ -404,4 +473,17 @@ String sessionErrorMessage(SessionError error) => switch (error) {
     'Não foi possível acessar os dados da sessão. Verifique o armazenamento e tente novamente.',
   SessionError.internal =>
     'Não foi possível verificar a sessão. Tente novamente.',
+};
+
+String logoutErrorMessage(LogoutError error) => switch (error) {
+  LogoutError.notAuthenticated => 'A sessão já não está autenticada.',
+  LogoutError.logoutInProgress => 'A saída já está em andamento.',
+  LogoutError.authenticationOperationInProgress =>
+    'Uma operação de autenticação está em andamento. Tente novamente.',
+  LogoutError.secureStorage =>
+    'Não foi possível remover a sessão do armazenamento seguro. Desbloqueie o cofre do sistema e tente Logout novamente.',
+  LogoutError.localCleanup =>
+    'Não foi possível concluir a remoção da sessão local. Tente Logout novamente.',
+  LogoutError.internal =>
+    'Não foi possível confirmar a saída. Tente Logout novamente.',
 };

@@ -9,6 +9,7 @@ use crate::{
 
 pub(crate) async fn list() -> Result<Vec<ConversationSummary>, ConversationError> {
     // snapshot libera o mutex antes da rede e mantém apenas o cliente já autenticado.
+    let _operation = auth::CLIENT_OPERATIONS.read().await;
     let client = auth::authenticated_client()?;
     let result = async {
         client

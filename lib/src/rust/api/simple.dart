@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Consulta os métodos de acesso sem autenticar ou reter um cliente global.
 Future<ServerInfo> probeServer({required String address}) =>
@@ -30,6 +30,9 @@ Future<List<ConversationSummary>> listConversations() =>
 /// Consulta primeiro a autoridade em memória, inclusive após hot restart do Dart.
 Future<SessionState> initializeSession() =>
     RustLib.instance.api.crateApiSimpleInitializeSession();
+
+/// Encerra a sessão remota quando possível e remove a capacidade local de restauração.
+Future<LogoutResult> logout() => RustLib.instance.api.crateApiSimpleLogout();
 
 /// Projeção pública da conta; a sessão e seus segredos permanecem no SDK em Rust.
 class AccountSummary {
@@ -103,12 +106,55 @@ enum LoginError {
   internal,
 }
 
+/// Err nunca afirma sucesso local; o cliente permanece reservado para nova tentativa.
+enum LogoutError {
+  notAuthenticated,
+  logoutInProgress,
+  authenticationOperationInProgress,
+  secureStorage,
+  localCleanup,
+  internal,
+}
+
+/// Sucesso local confirmado; avisos não incluem detalhes remotos nem segredos.
+class LogoutResult {
+  final RemoteLogoutStatus remoteStatus;
+  final bool storeCleanupPending;
+
+  const LogoutResult({
+    required this.remoteStatus,
+    required this.storeCleanupPending,
+  });
+
+  @override
+  int get hashCode => remoteStatus.hashCode ^ storeCleanupPending.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LogoutResult &&
+          runtimeType == other.runtimeType &&
+          remoteStatus == other.remoteStatus &&
+          storeCleanupPending == other.storeCleanupPending;
+}
+
 /// Categorias estáveis; detalhes do SDK e do servidor não atravessam a ponte.
 enum ProbeError {
   invalidServerAddress,
   network,
   tls,
   unusableHomeserver,
+  internal,
+}
+
+/// A sessão já revogada também satisfaz o encerramento remoto.
+enum RemoteLogoutStatus {
+  confirmed,
+  alreadyInvalid,
+  network,
+  tls,
+  rateLimited,
+  server,
   internal,
 }
 

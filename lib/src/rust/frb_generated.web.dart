@@ -51,10 +51,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LoginError dco_decode_login_error(dynamic raw);
 
   @protected
+  LogoutError dco_decode_logout_error(dynamic raw);
+
+  @protected
+  LogoutResult dco_decode_logout_result(dynamic raw);
+
+  @protected
   AccountSummary? dco_decode_opt_box_autoadd_account_summary(dynamic raw);
 
   @protected
   ProbeError dco_decode_probe_error(dynamic raw);
+
+  @protected
+  RemoteLogoutStatus dco_decode_remote_logout_status(dynamic raw);
 
   @protected
   ServerInfo dco_decode_server_info(dynamic raw);
@@ -105,12 +114,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LoginError sse_decode_login_error(SseDeserializer deserializer);
 
   @protected
+  LogoutError sse_decode_logout_error(SseDeserializer deserializer);
+
+  @protected
+  LogoutResult sse_decode_logout_result(SseDeserializer deserializer);
+
+  @protected
   AccountSummary? sse_decode_opt_box_autoadd_account_summary(
     SseDeserializer deserializer,
   );
 
   @protected
   ProbeError sse_decode_probe_error(SseDeserializer deserializer);
+
+  @protected
+  RemoteLogoutStatus sse_decode_remote_logout_status(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ServerInfo sse_decode_server_info(SseDeserializer deserializer);
@@ -173,6 +193,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_login_error(LoginError self, SseSerializer serializer);
 
   @protected
+  void sse_encode_logout_error(LogoutError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_logout_result(LogoutResult self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_account_summary(
     AccountSummary? self,
     SseSerializer serializer,
@@ -180,6 +206,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_probe_error(ProbeError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_remote_logout_status(
+    RemoteLogoutStatus self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_server_info(ServerInfo self, SseSerializer serializer);
