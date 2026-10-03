@@ -6,8 +6,16 @@ import 'package:desktop_chat_client/src/rust/api/simple.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Widget roomsApp(ConversationLoader load) =>
-    MaterialApp(home: Scaffold(body: ConversationList(load: load)));
+Widget roomsApp(ConversationLoader load) => MaterialApp(
+  home: Scaffold(
+    body: ConversationList(
+      load: load,
+      loadHistory:
+          ({required conversationId}) async =>
+              throw MessageHistoryError.internal,
+    ),
+  ),
+);
 
 void main() {
   testWidgets('Distingue carregamento de lista vazia bem-sucedida', (

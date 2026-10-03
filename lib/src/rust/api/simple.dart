@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Consulta os métodos de acesso sem autenticar ou reter um cliente global.
 Future<ServerInfo> probeServer({required String address}) =>
@@ -33,6 +33,13 @@ Future<SessionState> initializeSession() =>
 
 /// Encerra a sessão remota quando possível e remove a capacidade local de restauração.
 Future<LogoutResult> logout() => RustLib.instance.api.crateApiSimpleLogout();
+
+/// Retorna um retrato limitado do histórico textual, do mais antigo ao mais novo.
+Future<List<MessageSummary>> loadMessageHistory({
+  required String conversationId,
+}) => RustLib.instance.api.crateApiSimpleLoadMessageHistory(
+  conversationId: conversationId,
+);
 
 /// Projeção pública da conta; a sessão e seus segredos permanecem no SDK em Rust.
 class AccountSummary {
@@ -136,6 +143,56 @@ class LogoutResult {
           runtimeType == other.runtimeType &&
           remoteStatus == other.remoteStatus &&
           storeCleanupPending == other.storeCleanupPending;
+}
+
+/// Categorias fixas sem conteúdo remoto ou detalhes internos.
+enum MessageHistoryError {
+  notAuthenticated,
+  invalidConversationId,
+  conversationNotFound,
+  conversationNotJoined,
+  encryptionUnsupported,
+  network,
+  tls,
+  rateLimited,
+  history,
+  internal,
+}
+
+/// Projeção textual; eventos, JSON e segredos do SDK permanecem em Rust.
+class MessageSummary {
+  final String id;
+  final String senderId;
+  final String body;
+  final PlatformInt64 timestampMs;
+  final bool isOwn;
+
+  const MessageSummary({
+    required this.id,
+    required this.senderId,
+    required this.body,
+    required this.timestampMs,
+    required this.isOwn,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      senderId.hashCode ^
+      body.hashCode ^
+      timestampMs.hashCode ^
+      isOwn.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MessageSummary &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          senderId == other.senderId &&
+          body == other.body &&
+          timestampMs == other.timestampMs &&
+          isOwn == other.isOwn;
 }
 
 /// Categorias estáveis; detalhes do SDK e do servidor não atravessam a ponte.

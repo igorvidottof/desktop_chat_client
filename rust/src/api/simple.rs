@@ -136,3 +136,35 @@ pub enum LogoutError {
 pub async fn logout() -> Result<LogoutResult, LogoutError> {
     crate::auth::logout().await
 }
+
+/// Projeção textual; eventos, JSON e segredos do SDK permanecem em Rust.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MessageSummary {
+    pub id: String,
+    pub sender_id: String,
+    pub body: String,
+    pub timestamp_ms: i64,
+    pub is_own: bool,
+}
+
+/// Categorias fixas sem conteúdo remoto ou detalhes internos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageHistoryError {
+    NotAuthenticated,
+    InvalidConversationId,
+    ConversationNotFound,
+    ConversationNotJoined,
+    EncryptionUnsupported,
+    Network,
+    Tls,
+    RateLimited,
+    History,
+    Internal,
+}
+
+/// Retorna um retrato limitado do histórico textual, do mais antigo ao mais novo.
+pub async fn load_message_history(
+    conversation_id: String,
+) -> Result<Vec<MessageSummary>, MessageHistoryError> {
+    crate::message_history::load(&conversation_id).await
+}

@@ -40,7 +40,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_i_32(dynamic raw);
 
   @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw);
+
+  @protected
   List<ConversationSummary> dco_decode_list_conversation_summary(dynamic raw);
+
+  @protected
+  List<MessageSummary> dco_decode_list_message_summary(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
@@ -53,6 +59,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LogoutResult dco_decode_logout_result(dynamic raw);
+
+  @protected
+  MessageHistoryError dco_decode_message_history_error(dynamic raw);
+
+  @protected
+  MessageSummary dco_decode_message_summary(dynamic raw);
 
   @protected
   AccountSummary? dco_decode_opt_box_autoadd_account_summary(dynamic raw);
@@ -101,7 +113,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
+
+  @protected
   List<ConversationSummary> sse_decode_list_conversation_summary(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<MessageSummary> sse_decode_list_message_summary(
     SseDeserializer deserializer,
   );
 
@@ -116,6 +136,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   LogoutResult sse_decode_logout_result(SseDeserializer deserializer);
+
+  @protected
+  MessageHistoryError sse_decode_message_history_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MessageSummary sse_decode_message_summary(SseDeserializer deserializer);
 
   @protected
   AccountSummary? sse_decode_opt_box_autoadd_account_summary(
@@ -176,8 +204,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_conversation_summary(
     List<ConversationSummary> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_message_summary(
+    List<MessageSummary> self,
     SseSerializer serializer,
   );
 
@@ -195,6 +232,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_logout_result(LogoutResult self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_message_history_error(
+    MessageHistoryError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_message_summary(
+    MessageSummary self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_box_autoadd_account_summary(

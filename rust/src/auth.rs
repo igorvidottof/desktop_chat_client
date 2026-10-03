@@ -15,7 +15,7 @@ use crate::{
 // Login e restauração convergem aqui; somente a operação de salas solicita sync único.
 static AUTH: LazyLock<AuthState<AuthenticatedClient>> = LazyLock::new(AuthState::default);
 
-// Cada operação de salas mantém uma leitura até liberar todos os handles do SDK.
+// Cada operação de salas ou histórico mantém uma leitura até liberar todos os handles do SDK.
 // Logout reserva AUTH primeiro e aguarda exclusividade sem bloquear seu mutex.
 pub(crate) static CLIENT_OPERATIONS: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
 

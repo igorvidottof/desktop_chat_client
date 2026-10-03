@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 527472710;
+  int get rustContentHash => 659357372;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -79,6 +79,10 @@ abstract class RustLibApi extends BaseApi {
   Future<SessionState> crateApiSimpleInitializeSession();
 
   Future<List<ConversationSummary>> crateApiSimpleListConversations();
+
+  Future<List<MessageSummary>> crateApiSimpleLoadMessageHistory({
+    required String conversationId,
+  });
 
   Future<AccountSummary> crateApiSimpleLogin({
     required String homeserverAddress,
@@ -154,6 +158,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "list_conversations", argNames: []);
 
   @override
+  Future<List<MessageSummary>> crateApiSimpleLoadMessageHistory({
+    required String conversationId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(conversationId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 3,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_message_summary,
+          decodeErrorData: sse_decode_message_history_error,
+        ),
+        constMeta: kCrateApiSimpleLoadMessageHistoryConstMeta,
+        argValues: [conversationId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSimpleLoadMessageHistoryConstMeta =>
+      const TaskConstMeta(
+        debugName: "load_message_history",
+        argNames: ["conversationId"],
+      );
+
+  @override
   Future<AccountSummary> crateApiSimpleLogin({
     required String homeserverAddress,
     required String username,
@@ -169,7 +206,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -198,7 +235,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 5,
             port: port_,
           );
         },
@@ -226,7 +263,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 6,
             port: port_,
           );
         },
@@ -300,9 +337,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64 dco_decode_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeI64(raw);
+  }
+
+  @protected
   List<ConversationSummary> dco_decode_list_conversation_summary(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_conversation_summary).toList();
+  }
+
+  @protected
+  List<MessageSummary> dco_decode_list_message_summary(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_message_summary).toList();
   }
 
   @protected
@@ -332,6 +381,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return LogoutResult(
       remoteStatus: dco_decode_remote_logout_status(arr[0]),
       storeCleanupPending: dco_decode_bool(arr[1]),
+    );
+  }
+
+  @protected
+  MessageHistoryError dco_decode_message_history_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return MessageHistoryError.values[raw as int];
+  }
+
+  @protected
+  MessageSummary dco_decode_message_summary(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return MessageSummary(
+      id: dco_decode_String(arr[0]),
+      senderId: dco_decode_String(arr[1]),
+      body: dco_decode_String(arr[2]),
+      timestampMs: dco_decode_i_64(arr[3]),
+      isOwn: dco_decode_bool(arr[4]),
     );
   }
 
@@ -448,6 +518,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PlatformInt64 sse_decode_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getPlatformInt64();
+  }
+
+  @protected
   List<ConversationSummary> sse_decode_list_conversation_summary(
     SseDeserializer deserializer,
   ) {
@@ -457,6 +533,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <ConversationSummary>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_conversation_summary(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<MessageSummary> sse_decode_list_message_summary(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <MessageSummary>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_message_summary(deserializer));
     }
     return ans_;
   }
@@ -490,6 +580,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return LogoutResult(
       remoteStatus: var_remoteStatus,
       storeCleanupPending: var_storeCleanupPending,
+    );
+  }
+
+  @protected
+  MessageHistoryError sse_decode_message_history_error(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return MessageHistoryError.values[inner];
+  }
+
+  @protected
+  MessageSummary sse_decode_message_summary(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_senderId = sse_decode_String(deserializer);
+    var var_body = sse_decode_String(deserializer);
+    var var_timestampMs = sse_decode_i_64(deserializer);
+    var var_isOwn = sse_decode_bool(deserializer);
+    return MessageSummary(
+      id: var_id,
+      senderId: var_senderId,
+      body: var_body,
+      timestampMs: var_timestampMs,
+      isOwn: var_isOwn,
     );
   }
 
@@ -611,6 +727,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putPlatformInt64(self);
+  }
+
+  @protected
   void sse_encode_list_conversation_summary(
     List<ConversationSummary> self,
     SseSerializer serializer,
@@ -619,6 +741,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_conversation_summary(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_message_summary(
+    List<MessageSummary> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_message_summary(item, serializer);
     }
   }
 
@@ -649,6 +783,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_remote_logout_status(self.remoteStatus, serializer);
     sse_encode_bool(self.storeCleanupPending, serializer);
+  }
+
+  @protected
+  void sse_encode_message_history_error(
+    MessageHistoryError self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_message_summary(
+    MessageSummary self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.senderId, serializer);
+    sse_encode_String(self.body, serializer);
+    sse_encode_i_64(self.timestampMs, serializer);
+    sse_encode_bool(self.isOwn, serializer);
   }
 
   @protected

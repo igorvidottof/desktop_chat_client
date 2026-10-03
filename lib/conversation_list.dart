@@ -1,19 +1,26 @@
 import 'package:flutter/material.dart';
 
 import 'src/rust/api/simple.dart';
+import 'conversation_screen.dart';
 
 typedef ConversationLoader = Future<List<ConversationSummary>> Function();
 
 class ConversationList extends StatefulWidget {
-  const ConversationList({super.key, required this.load});
+  const ConversationList({
+    super.key,
+    required this.load,
+    required this.loadHistory,
+  });
 
   final ConversationLoader load;
+  final MessageHistoryLoader loadHistory;
 
   @override
   State<ConversationList> createState() => _ConversationListState();
 }
 
 class _ConversationListState extends State<ConversationList> {
+  final _historySessions = <ValueNotifier<bool>>{};
   bool _loading = true;
   List<ConversationSummary> _rooms = const [];
   ConversationError? _error;
@@ -43,6 +50,35 @@ class _ConversationListState extends State<ConversationList> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _open(ConversationSummary room) async {
+    final active = ValueNotifier(true);
+    _historySessions.add(active);
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder:
+              (_) => ConversationScreen(
+                conversation: room,
+                load: widget.loadHistory,
+                sessionActive: active,
+              ),
+        ),
+      );
+    } finally {
+      _historySessions.remove(active);
+      active.dispose();
+    }
+  }
+
+  @override
+  void dispose() {
+    // Desmontar a lista no início do logout invalida também as rotas abertas.
+    for (final active in _historySessions) {
+      active.value = false;
+    }
+    super.dispose();
   }
 
   @override
@@ -78,6 +114,7 @@ class _ConversationListState extends State<ConversationList> {
           return ListTile(
             key: ValueKey(room.id),
             title: Text(room.displayName),
+            onTap: () => _open(room),
           );
         },
       ),

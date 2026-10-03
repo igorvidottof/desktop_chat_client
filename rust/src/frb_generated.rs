@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 527472710;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 659357372;
 
 // Section: executor
 
@@ -109,6 +109,43 @@ fn wire__crate__api__simple__list_conversations_impl(
                 transform_result_sse::<_, crate::api::simple::ConversationError>(
                     (move || async move {
                         let output_ok = crate::api::simple::list_conversations().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__simple__load_message_history_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "load_message_history",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_conversation_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::simple::MessageHistoryError>(
+                    (move || async move {
+                        let output_ok =
+                            crate::api::simple::load_message_history(api_conversation_id).await?;
                         std::result::Result::Ok(output_ok)
                     })()
                     .await,
@@ -298,6 +335,13 @@ impl SseDecode for i32 {
     }
 }
 
+impl SseDecode for i64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_i64::<NativeEndian>().unwrap()
+    }
+}
+
 impl SseDecode for Vec<crate::api::simple::ConversationSummary> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -305,6 +349,20 @@ impl SseDecode for Vec<crate::api::simple::ConversationSummary> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::simple::ConversationSummary>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::simple::MessageSummary> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::simple::MessageSummary>::sse_decode(
                 deserializer,
             ));
         }
@@ -372,6 +430,44 @@ impl SseDecode for crate::api::simple::LogoutResult {
         return crate::api::simple::LogoutResult {
             remote_status: var_remoteStatus,
             store_cleanup_pending: var_storeCleanupPending,
+        };
+    }
+}
+
+impl SseDecode for crate::api::simple::MessageHistoryError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::simple::MessageHistoryError::NotAuthenticated,
+            1 => crate::api::simple::MessageHistoryError::InvalidConversationId,
+            2 => crate::api::simple::MessageHistoryError::ConversationNotFound,
+            3 => crate::api::simple::MessageHistoryError::ConversationNotJoined,
+            4 => crate::api::simple::MessageHistoryError::EncryptionUnsupported,
+            5 => crate::api::simple::MessageHistoryError::Network,
+            6 => crate::api::simple::MessageHistoryError::Tls,
+            7 => crate::api::simple::MessageHistoryError::RateLimited,
+            8 => crate::api::simple::MessageHistoryError::History,
+            9 => crate::api::simple::MessageHistoryError::Internal,
+            _ => unreachable!("Invalid variant for MessageHistoryError: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::simple::MessageSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_senderId = <String>::sse_decode(deserializer);
+        let mut var_body = <String>::sse_decode(deserializer);
+        let mut var_timestampMs = <i64>::sse_decode(deserializer);
+        let mut var_isOwn = <bool>::sse_decode(deserializer);
+        return crate::api::simple::MessageSummary {
+            id: var_id,
+            sender_id: var_senderId,
+            body: var_body,
+            timestamp_ms: var_timestampMs,
+            is_own: var_isOwn,
         };
     }
 }
@@ -480,9 +576,10 @@ fn pde_ffi_dispatcher_primary_impl(
     match func_id {
         1 => wire__crate__api__simple__initialize_session_impl(port, ptr, rust_vec_len, data_len),
         2 => wire__crate__api__simple__list_conversations_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__simple__login_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__simple__logout_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__simple__probe_server_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__simple__load_message_history_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__simple__login_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__simple__logout_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__simple__probe_server_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -644,6 +741,59 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::LogoutResult>
     for crate::api::simple::LogoutResult
 {
     fn into_into_dart(self) -> crate::api::simple::LogoutResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::simple::MessageHistoryError {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::NotAuthenticated => 0.into_dart(),
+            Self::InvalidConversationId => 1.into_dart(),
+            Self::ConversationNotFound => 2.into_dart(),
+            Self::ConversationNotJoined => 3.into_dart(),
+            Self::EncryptionUnsupported => 4.into_dart(),
+            Self::Network => 5.into_dart(),
+            Self::Tls => 6.into_dart(),
+            Self::RateLimited => 7.into_dart(),
+            Self::History => 8.into_dart(),
+            Self::Internal => 9.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::simple::MessageHistoryError
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::MessageHistoryError>
+    for crate::api::simple::MessageHistoryError
+{
+    fn into_into_dart(self) -> crate::api::simple::MessageHistoryError {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::simple::MessageSummary {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.sender_id.into_into_dart().into_dart(),
+            self.body.into_into_dart().into_dart(),
+            self.timestamp_ms.into_into_dart().into_dart(),
+            self.is_own.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::simple::MessageSummary
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::MessageSummary>
+    for crate::api::simple::MessageSummary
+{
+    fn into_into_dart(self) -> crate::api::simple::MessageSummary {
         self
     }
 }
@@ -821,12 +971,29 @@ impl SseEncode for i32 {
     }
 }
 
+impl SseEncode for i64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_i64::<NativeEndian>(self).unwrap();
+    }
+}
+
 impl SseEncode for Vec<crate::api::simple::ConversationSummary> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::simple::ConversationSummary>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::simple::MessageSummary> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::simple::MessageSummary>::sse_encode(item, serializer);
         }
     }
 }
@@ -893,6 +1060,41 @@ impl SseEncode for crate::api::simple::LogoutResult {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::api::simple::RemoteLogoutStatus>::sse_encode(self.remote_status, serializer);
         <bool>::sse_encode(self.store_cleanup_pending, serializer);
+    }
+}
+
+impl SseEncode for crate::api::simple::MessageHistoryError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::simple::MessageHistoryError::NotAuthenticated => 0,
+                crate::api::simple::MessageHistoryError::InvalidConversationId => 1,
+                crate::api::simple::MessageHistoryError::ConversationNotFound => 2,
+                crate::api::simple::MessageHistoryError::ConversationNotJoined => 3,
+                crate::api::simple::MessageHistoryError::EncryptionUnsupported => 4,
+                crate::api::simple::MessageHistoryError::Network => 5,
+                crate::api::simple::MessageHistoryError::Tls => 6,
+                crate::api::simple::MessageHistoryError::RateLimited => 7,
+                crate::api::simple::MessageHistoryError::History => 8,
+                crate::api::simple::MessageHistoryError::Internal => 9,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::simple::MessageSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.sender_id, serializer);
+        <String>::sse_encode(self.body, serializer);
+        <i64>::sse_encode(self.timestamp_ms, serializer);
+        <bool>::sse_encode(self.is_own, serializer);
     }
 }
 

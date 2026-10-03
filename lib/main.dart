@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'src/rust/api/simple.dart';
 import 'conversation_list.dart';
+import 'conversation_screen.dart';
 import 'src/rust/frb_generated.dart';
 
 Future<void> main() async {
@@ -42,6 +43,7 @@ class MyApp extends StatelessWidget {
     required this.probe,
     required this.authenticate,
     required this.loadConversations,
+    this.loadHistory = loadMessageHistory,
   });
 
   final SessionInitializer initialize;
@@ -49,6 +51,7 @@ class MyApp extends StatelessWidget {
   final ServerProbe probe;
   final PasswordLogin authenticate;
   final ConversationLoader loadConversations;
+  final MessageHistoryLoader loadHistory;
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +66,7 @@ class MyApp extends StatelessWidget {
         probe: probe,
         authenticate: authenticate,
         loadConversations: loadConversations,
+        loadHistory: loadHistory,
       ),
     );
   }
@@ -76,6 +80,7 @@ class LoginScreen extends StatefulWidget {
     required this.probe,
     required this.authenticate,
     required this.loadConversations,
+    required this.loadHistory,
   });
 
   final SessionInitializer initialize;
@@ -83,6 +88,7 @@ class LoginScreen extends StatefulWidget {
   final ServerProbe probe;
   final PasswordLogin authenticate;
   final ConversationLoader loadConversations;
+  final MessageHistoryLoader loadHistory;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -367,7 +373,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     const Text('Saindo…'),
                   ] else
                     // Desmontar durante logout invalida callbacks de salas antigas.
-                    ConversationList(load: widget.loadConversations),
+                    ConversationList(
+                      load: widget.loadConversations,
+                      loadHistory: widget.loadHistory,
+                    ),
                 ],
                 if (_logoutError case final error?)
                   Semantics(
