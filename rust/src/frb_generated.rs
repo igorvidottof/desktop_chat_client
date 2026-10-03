@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -450106330;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -992163530;
 
 // Section: executor
 
@@ -47,6 +47,41 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__api__simple__list_conversations_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "list_conversations",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::simple::ConversationError>(
+                    (move || async move {
+                        let output_ok = crate::api::simple::list_conversations().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__simple__login_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -158,10 +193,52 @@ impl SseDecode for bool {
     }
 }
 
+impl SseDecode for crate::api::simple::ConversationError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::simple::ConversationError::NotAuthenticated,
+            1 => crate::api::simple::ConversationError::Network,
+            2 => crate::api::simple::ConversationError::Tls,
+            3 => crate::api::simple::ConversationError::RateLimited,
+            4 => crate::api::simple::ConversationError::Synchronization,
+            5 => crate::api::simple::ConversationError::Internal,
+            _ => unreachable!("Invalid variant for ConversationError: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::simple::ConversationSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_displayName = <String>::sse_decode(deserializer);
+        return crate::api::simple::ConversationSummary {
+            id: var_id,
+            display_name: var_displayName,
+        };
+    }
+}
+
 impl SseDecode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_i32::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for Vec<crate::api::simple::ConversationSummary> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::simple::ConversationSummary>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
     }
 }
 
@@ -241,8 +318,9 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__simple__login_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__simple__probe_server_impl(port, ptr, rust_vec_len, data_len),
+        1 => wire__crate__api__simple__list_conversations_impl(port, ptr, rust_vec_len, data_len),
+        2 => wire__crate__api__simple__login_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__simple__probe_server_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -280,6 +358,52 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::AccountSummary>
     for crate::api::simple::AccountSummary
 {
     fn into_into_dart(self) -> crate::api::simple::AccountSummary {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::simple::ConversationError {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::NotAuthenticated => 0.into_dart(),
+            Self::Network => 1.into_dart(),
+            Self::Tls => 2.into_dart(),
+            Self::RateLimited => 3.into_dart(),
+            Self::Synchronization => 4.into_dart(),
+            Self::Internal => 5.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::simple::ConversationError
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::ConversationError>
+    for crate::api::simple::ConversationError
+{
+    fn into_into_dart(self) -> crate::api::simple::ConversationError {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::simple::ConversationSummary {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.display_name.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::simple::ConversationSummary
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::ConversationSummary>
+    for crate::api::simple::ConversationSummary
+{
+    fn into_into_dart(self) -> crate::api::simple::ConversationSummary {
         self
     }
 }
@@ -382,10 +506,48 @@ impl SseEncode for bool {
     }
 }
 
+impl SseEncode for crate::api::simple::ConversationError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::simple::ConversationError::NotAuthenticated => 0,
+                crate::api::simple::ConversationError::Network => 1,
+                crate::api::simple::ConversationError::Tls => 2,
+                crate::api::simple::ConversationError::RateLimited => 3,
+                crate::api::simple::ConversationError::Synchronization => 4,
+                crate::api::simple::ConversationError::Internal => 5,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::simple::ConversationSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.display_name, serializer);
+    }
+}
+
 impl SseEncode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for Vec<crate::api::simple::ConversationSummary> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::simple::ConversationSummary>::sse_encode(item, serializer);
+        }
     }
 }
 

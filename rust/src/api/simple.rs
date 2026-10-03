@@ -52,3 +52,26 @@ pub async fn login(
 ) -> Result<AccountSummary, LoginError> {
     crate::auth::login(&homeserver_address, &username, password).await
 }
+
+/// Resumo de apresentação; o identificador é opaco para Flutter, sem tipos Matrix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationSummary {
+    pub id: String,
+    pub display_name: String,
+}
+
+/// Categorias seguras, sem respostas do servidor nem segredos da sessão.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConversationError {
+    NotAuthenticated,
+    Network,
+    Tls,
+    RateLimited,
+    Synchronization,
+    Internal,
+}
+
+/// Sincroniza uma única vez e retorna somente salas ingressadas que não são espaços.
+pub async fn list_conversations() -> Result<Vec<ConversationSummary>, ConversationError> {
+    crate::conversations::list().await
+}

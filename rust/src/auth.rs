@@ -1,20 +1,20 @@
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use matrix_sdk::{ruma::api::error::ErrorKind, Client, HttpError};
 
 use crate::{
-    api::simple::{AccountSummary, LoginError, ProbeError},
+    api::simple::{AccountSummary, ConversationError, LoginError, ProbeError},
     matrix,
 };
 
 // O contêiner privado possui o único cliente ativo. Nenhum handle atravessa FRB.
-// O SDK usa o armazenamento padrão em memória; não abrimos banco nem iniciamos sync.
+// O SDK usa armazenamento em memória; somente a operação de salas solicita sync único.
 static AUTH: LazyLock<AuthState<Client>> = LazyLock::new(AuthState::default);
 
 enum State<T> {
     Idle,
     LoggingIn,
-    Authenticated(T),
+    Authenticated(Arc<T>),
 }
 
 struct AuthState<T> {
@@ -38,6 +38,23 @@ impl<T> AuthState<T> {
         let (client, output) = operation().await?;
         attempt.publish(client)?;
         Ok(output)
+    }
+
+    fn snapshot(&self) -> Result<Arc<T>, ConversationError> {
+        let state = self.state.lock().map_err(|_| ConversationError::Internal)?;
+        match &*state {
+            State::Authenticated(client) => Ok(Arc::clone(client)),
+            _ => Err(ConversationError::NotAuthenticated),
+        }
+    }
+
+    fn ensure_current(&self, snapshot: &Arc<T>) -> Result<(), ConversationError> {
+        let current = self.snapshot()?;
+        if Arc::ptr_eq(&current, snapshot) {
+            Ok(())
+        } else {
+            Err(ConversationError::NotAuthenticated)
+        }
     }
 
     fn begin(&self) -> Result<LoginAttempt<'_, T>, LoginError> {
@@ -65,7 +82,7 @@ impl<T> LoginAttempt<'_, T> {
         if !matches!(*state, State::LoggingIn) {
             return Err(LoginError::Internal);
         }
-        *state = State::Authenticated(client);
+        *state = State::Authenticated(Arc::new(client));
         Ok(())
     }
 }
@@ -78,6 +95,16 @@ impl<T> Drop for LoginAttempt<'_, T> {
             }
         }
     }
+}
+
+// O Arc externo permite comparar a identidade do cliente ativo após os awaits.
+// Client::clone também compartilha ClientInner via Arc no SDK 0.19.1; não cria sessão.
+pub(crate) fn authenticated_client() -> Result<Arc<Client>, ConversationError> {
+    AUTH.snapshot()
+}
+
+pub(crate) fn ensure_current(client: &Arc<Client>) -> Result<(), ConversationError> {
+    AUTH.ensure_current(client)
 }
 
 fn validate_input(username: &str, password: &str) -> Result<(), LoginError> {
@@ -160,7 +187,7 @@ fn map_http_error(error: HttpError) -> LoginError {
     map_http_error_ref(&error, true)
 }
 
-fn map_http_error_ref(error: &HttpError, credentials_sent: bool) -> LoginError {
+pub(crate) fn map_http_error_ref(error: &HttpError, credentials_sent: bool) -> LoginError {
     if let HttpError::Cached(error) = error {
         return map_http_error_ref(error, credentials_sent);
     }
@@ -195,6 +222,29 @@ mod tests {
         client::{session::get_login_types::v3::PasswordLoginType, uiaa::UiaaResponse},
         error::{ErrorBody, FromHttpResponseError, LimitExceededErrorData, StandardErrorBody},
     };
+
+    #[test]
+    fn snapshot_releases_lock_and_rejects_changed_authentication() {
+        let auth = AuthState::<u8>::default();
+        assert_eq!(
+            auth.snapshot().unwrap_err(),
+            ConversationError::NotAuthenticated
+        );
+        auth.begin().unwrap().publish(7).unwrap();
+        let snapshot = auth.snapshot().unwrap();
+        assert!(auth.state.try_lock().is_ok());
+        assert_eq!(auth.ensure_current(&snapshot), Ok(()));
+        *auth.state.lock().unwrap() = State::Authenticated(Arc::new(7));
+        assert_eq!(
+            auth.ensure_current(&snapshot),
+            Err(ConversationError::NotAuthenticated)
+        );
+        *auth.state.lock().unwrap() = State::Idle;
+        assert_eq!(
+            auth.ensure_current(&snapshot),
+            Err(ConversationError::NotAuthenticated)
+        );
+    }
 
     #[test]
     fn validates_required_input_without_changing_password() {
@@ -239,7 +289,7 @@ mod tests {
         auth.begin().unwrap().publish(7).unwrap();
         assert!(matches!(
             *auth.state.lock().unwrap(),
-            State::Authenticated(7)
+            State::Authenticated(ref client) if **client == 7
         ));
         assert!(matches!(
             auth.begin(),
@@ -247,7 +297,7 @@ mod tests {
         ));
         assert!(matches!(
             *auth.state.lock().unwrap(),
-            State::Authenticated(7)
+            State::Authenticated(ref client) if **client == 7
         ));
     }
 

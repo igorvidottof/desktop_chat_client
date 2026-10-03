@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'src/rust/api/simple.dart';
+import 'conversation_list.dart';
 import 'src/rust/frb_generated.dart';
 
 Future<void> main() async {
@@ -8,6 +9,7 @@ Future<void> main() async {
   await RustLib.init();
   runApp(
     MyApp(
+      loadConversations: listConversations,
       probe: (address) => probeServer(address: address),
       authenticate:
           (address, username, password) => login(
@@ -29,10 +31,16 @@ typedef PasswordLogin =
 typedef ServerProbe = Future<ServerInfo> Function(String address);
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key, required this.probe, required this.authenticate});
+  const MyApp({
+    super.key,
+    required this.probe,
+    required this.authenticate,
+    required this.loadConversations,
+  });
 
   final ServerProbe probe;
   final PasswordLogin authenticate;
+  final ConversationLoader loadConversations;
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +49,11 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: LoginScreen(probe: probe, authenticate: authenticate),
+      home: LoginScreen(
+        probe: probe,
+        authenticate: authenticate,
+        loadConversations: loadConversations,
+      ),
     );
   }
 }
@@ -51,10 +63,12 @@ class LoginScreen extends StatefulWidget {
     super.key,
     required this.probe,
     required this.authenticate,
+    required this.loadConversations,
   });
 
   final ServerProbe probe;
   final PasswordLogin authenticate;
+  final ConversationLoader loadConversations;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -215,6 +229,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   SelectableText(account.userId),
                   SelectableText('Dispositivo: ${account.deviceId}'),
                   SelectableText(account.homeserverAddress),
+                  const SizedBox(height: 16),
+                  ConversationList(load: widget.loadConversations),
                 ],
                 if (_loginError case final error?) ...[
                   const SizedBox(height: 16),

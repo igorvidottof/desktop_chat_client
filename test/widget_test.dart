@@ -105,6 +105,7 @@ void main() {
 }
 
 Widget probeApp({required ServerProbe probe}) => MyApp(
+  loadConversations: () async => [],
   probe: probe,
   authenticate: (_, _, _) async => throw LoginError.internal,
 );

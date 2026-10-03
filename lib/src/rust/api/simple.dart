@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Consulta os métodos de acesso sem autenticar ou reter um cliente global.
 Future<ServerInfo> probeServer({required String address}) =>
@@ -22,6 +22,10 @@ Future<AccountSummary> login({
   username: username,
   password: password,
 );
+
+/// Sincroniza uma única vez e retorna somente salas ingressadas que não são espaços.
+Future<List<ConversationSummary>> listConversations() =>
+    RustLib.instance.api.crateApiSimpleListConversations();
 
 /// Projeção pública da conta; a sessão e seus segredos permanecem no SDK em Rust.
 class AccountSummary {
@@ -47,6 +51,35 @@ class AccountSummary {
           userId == other.userId &&
           deviceId == other.deviceId &&
           homeserverAddress == other.homeserverAddress;
+}
+
+/// Categorias seguras, sem respostas do servidor nem segredos da sessão.
+enum ConversationError {
+  notAuthenticated,
+  network,
+  tls,
+  rateLimited,
+  synchronization,
+  internal,
+}
+
+/// Resumo de apresentação; o identificador é opaco para Flutter, sem tipos Matrix.
+class ConversationSummary {
+  final String id;
+  final String displayName;
+
+  const ConversationSummary({required this.id, required this.displayName});
+
+  @override
+  int get hashCode => id.hashCode ^ displayName.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ConversationSummary &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          displayName == other.displayName;
 }
 
 /// Falhas estáveis sem mensagens, respostas ou objetos de autenticação do SDK.

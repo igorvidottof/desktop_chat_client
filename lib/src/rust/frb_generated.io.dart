@@ -28,7 +28,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  ConversationError dco_decode_conversation_error(dynamic raw);
+
+  @protected
+  ConversationSummary dco_decode_conversation_summary(dynamic raw);
+
+  @protected
   int dco_decode_i_32(dynamic raw);
+
+  @protected
+  List<ConversationSummary> dco_decode_list_conversation_summary(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
@@ -55,7 +64,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  ConversationError sse_decode_conversation_error(SseDeserializer deserializer);
+
+  @protected
+  ConversationSummary sse_decode_conversation_summary(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
+
+  @protected
+  List<ConversationSummary> sse_decode_list_conversation_summary(
+    SseDeserializer deserializer,
+  );
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
@@ -85,7 +107,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_conversation_error(
+    ConversationError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_conversation_summary(
+    ConversationSummary self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_conversation_summary(
+    List<ConversationSummary> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_8_strict(
