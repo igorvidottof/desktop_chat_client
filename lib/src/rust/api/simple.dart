@@ -6,11 +6,63 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Consulta os métodos de acesso sem autenticar ou reter um cliente global.
 Future<ServerInfo> probeServer({required String address}) =>
     RustLib.instance.api.crateApiSimpleProbeServer(address: address);
+
+/// A senha atravessa a ponte somente nesta direção e não integra o estado da conta.
+Future<AccountSummary> login({
+  required String homeserverAddress,
+  required String username,
+  required String password,
+}) => RustLib.instance.api.crateApiSimpleLogin(
+  homeserverAddress: homeserverAddress,
+  username: username,
+  password: password,
+);
+
+/// Projeção pública da conta; a sessão e seus segredos permanecem no SDK em Rust.
+class AccountSummary {
+  final String userId;
+  final String deviceId;
+  final String homeserverAddress;
+
+  const AccountSummary({
+    required this.userId,
+    required this.deviceId,
+    required this.homeserverAddress,
+  });
+
+  @override
+  int get hashCode =>
+      userId.hashCode ^ deviceId.hashCode ^ homeserverAddress.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AccountSummary &&
+          runtimeType == other.runtimeType &&
+          userId == other.userId &&
+          deviceId == other.deviceId &&
+          homeserverAddress == other.homeserverAddress;
+}
+
+/// Falhas estáveis sem mensagens, respostas ou objetos de autenticação do SDK.
+enum LoginError {
+  invalidServerAddress,
+  invalidInput,
+  passwordLoginUnsupported,
+  invalidCredentials,
+  network,
+  tls,
+  rateLimited,
+  alreadyAuthenticated,
+  loginInProgress,
+  unusableHomeserver,
+  internal,
+}
 
 /// Categorias estáveis; detalhes do SDK e do servidor não atravessam a ponte.
 enum ProbeError {

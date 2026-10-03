@@ -12,20 +12,20 @@ void main() {
     final pending = Completer<ServerInfo>();
     String? received;
     await tester.pumpWidget(
-      MyApp(
+      probeApp(
         probe: (address) {
           received = address;
           return pending.future;
         },
       ),
     );
-    await tester.enterText(find.byType(TextField), 'https://example.org');
+    await tester.enterText(find.byType(TextField).first, 'https://example.org');
     await tester.tap(find.text('Verificar servidor'));
     await tester.pump();
     expect(received, 'https://example.org');
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester.widget<FilledButton>(find.byType(FilledButton).last).onPressed,
       isNull,
     );
     pending.complete(
@@ -45,7 +45,7 @@ void main() {
   ) async {
     var calls = 0;
     await tester.pumpWidget(
-      MyApp(
+      probeApp(
         probe: (_) async {
           calls++;
           if (calls > 1) throw ProbeError.network;
@@ -64,14 +64,14 @@ void main() {
     expect(find.text('Login com senha: não suportado'), findsNothing);
     expect(find.text(probeErrorMessage(ProbeError.network)), findsOneWidget);
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester.widget<FilledButton>(find.byType(FilledButton).last).onPressed,
       isNotNull,
     );
   });
 
   for (final error in ProbeError.values) {
     testWidgets('Apresenta mensagem segura para ${error.name}', (tester) async {
-      await tester.pumpWidget(MyApp(probe: (_) async => throw error));
+      await tester.pumpWidget(probeApp(probe: (_) async => throw error));
       await tester.tap(find.text('Verificar servidor'));
       await tester.pumpAndSettle();
       expect(find.text(probeErrorMessage(error)), findsOneWidget);
@@ -80,7 +80,7 @@ void main() {
 
   testWidgets('Oculta detalhes de falhas inesperadas da ponte', (tester) async {
     await tester.pumpWidget(
-      MyApp(
+      probeApp(
         probe: (_) async {
           throw StateError('sensitive remote response');
         },
@@ -94,7 +94,7 @@ void main() {
 
   testWidgets('Ignora a conclusão depois de fechar a tela', (tester) async {
     final pending = Completer<ServerInfo>();
-    await tester.pumpWidget(MyApp(probe: (_) => pending.future));
+    await tester.pumpWidget(probeApp(probe: (_) => pending.future));
     await tester.tap(find.text('Verificar servidor'));
     await tester.pump();
     await tester.pumpWidget(const SizedBox());
@@ -103,3 +103,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 }
+
+Widget probeApp({required ServerProbe probe}) => MyApp(
+  probe: probe,
+  authenticate: (_, _, _) async => throw LoginError.internal,
+);

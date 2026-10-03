@@ -8,7 +8,7 @@ use url::Url;
 
 use crate::api::simple::{ProbeError, ServerInfo};
 
-fn validate_address(address: &str) -> Result<Url, ProbeError> {
+pub(crate) fn validate_address(address: &str) -> Result<Url, ProbeError> {
     let address = address.trim();
     if !address.to_ascii_lowercase().starts_with("https://")
         || address.chars().any(char::is_whitespace)
@@ -33,26 +33,7 @@ fn validate_address(address: &str) -> Result<Url, ProbeError> {
 }
 
 pub(crate) async fn probe(address: &str) -> Result<ServerInfo, ProbeError> {
-    let url = validate_address(address)?;
-    // Sem redirecionamentos: o endereço explícito não pode migrar para HTTP.
-    let http_client = reqwest::Client::builder()
-        .https_only(true)
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|_| ProbeError::Internal)?;
-    let client = Client::builder()
-        .homeserver_url(url.as_str())
-        .http_client(http_client)
-        .request_config(
-            RequestConfig::default()
-                .retry_limit(0)
-                .timeout(Duration::from_secs(15)),
-        )
-        .build()
-        .await
-        .map_err(map_build_error)?;
+    let client = build_client(validate_address(address)?).await?;
     // Construir o cliente não prova conectividade; o sucesso depende desta consulta.
     let response = client
         .matrix_auth()
@@ -65,7 +46,31 @@ pub(crate) async fn probe(address: &str) -> Result<ServerInfo, ProbeError> {
     })
 }
 
-fn supports_password(flows: &[LoginType]) -> bool {
+pub(crate) async fn build_client(url: Url) -> Result<Client, ProbeError> {
+    // Sem redirecionamentos: o endereço explícito não pode migrar para HTTP.
+    let http_client = reqwest::Client::builder()
+        .https_only(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|_| ProbeError::Internal)?;
+    Client::builder()
+        .homeserver_url(url.as_str())
+        // A resposta de login não pode trocar o destino explícito por outro URL.
+        .respect_login_well_known(false)
+        .http_client(http_client)
+        .request_config(
+            RequestConfig::default()
+                .retry_limit(0)
+                .timeout(Duration::from_secs(15)),
+        )
+        .build()
+        .await
+        .map_err(map_build_error)
+}
+
+pub(crate) fn supports_password(flows: &[LoginType]) -> bool {
     flows
         .iter()
         .any(|flow| matches!(flow, LoginType::Password(_)))
@@ -81,7 +86,7 @@ fn map_build_error(error: ClientBuildError) -> ProbeError {
     }
 }
 
-fn contains_tls_error(mut error: &(dyn Error + 'static)) -> bool {
+pub(crate) fn contains_tls_error(mut error: &(dyn Error + 'static)) -> bool {
     loop {
         if error.downcast_ref::<rustls::Error>().is_some() {
             return true;
@@ -102,7 +107,7 @@ fn contains_tls_error(mut error: &(dyn Error + 'static)) -> bool {
     }
 }
 
-fn map_http_error(error: HttpError) -> ProbeError {
+pub(crate) fn map_http_error(error: HttpError) -> ProbeError {
     match error {
         HttpError::Reqwest(error) => {
             if contains_tls_error(&error) {

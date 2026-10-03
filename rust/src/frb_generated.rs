@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 560774853;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -450106330;
 
 // Section: executor
 
@@ -47,6 +47,49 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__api__simple__login_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "login",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_homeserver_address = <String>::sse_decode(&mut deserializer);
+            let api_username = <String>::sse_decode(&mut deserializer);
+            let api_password = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::simple::LoginError>(
+                    (move || async move {
+                        let output_ok = crate::api::simple::login(
+                            api_homeserver_address,
+                            api_username,
+                            api_password,
+                        )
+                        .await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__simple__probe_server_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -94,6 +137,20 @@ impl SseDecode for String {
     }
 }
 
+impl SseDecode for crate::api::simple::AccountSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_userId = <String>::sse_decode(deserializer);
+        let mut var_deviceId = <String>::sse_decode(deserializer);
+        let mut var_homeserverAddress = <String>::sse_decode(deserializer);
+        return crate::api::simple::AccountSummary {
+            user_id: var_userId,
+            device_id: var_deviceId,
+            homeserver_address: var_homeserverAddress,
+        };
+    }
+}
+
 impl SseDecode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -117,6 +174,27 @@ impl SseDecode for Vec<u8> {
             ans_.push(<u8>::sse_decode(deserializer));
         }
         return ans_;
+    }
+}
+
+impl SseDecode for crate::api::simple::LoginError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::simple::LoginError::InvalidServerAddress,
+            1 => crate::api::simple::LoginError::InvalidInput,
+            2 => crate::api::simple::LoginError::PasswordLoginUnsupported,
+            3 => crate::api::simple::LoginError::InvalidCredentials,
+            4 => crate::api::simple::LoginError::Network,
+            5 => crate::api::simple::LoginError::Tls,
+            6 => crate::api::simple::LoginError::RateLimited,
+            7 => crate::api::simple::LoginError::AlreadyAuthenticated,
+            8 => crate::api::simple::LoginError::LoginInProgress,
+            9 => crate::api::simple::LoginError::UnusableHomeserver,
+            10 => crate::api::simple::LoginError::Internal,
+            _ => unreachable!("Invalid variant for LoginError: {}", inner),
+        };
     }
 }
 
@@ -163,7 +241,8 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__simple__probe_server_impl(port, ptr, rust_vec_len, data_len),
+        1 => wire__crate__api__simple__login_impl(port, ptr, rust_vec_len, data_len),
+        2 => wire__crate__api__simple__probe_server_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -182,6 +261,58 @@ fn pde_ffi_dispatcher_sync_impl(
 
 // Section: rust2dart
 
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::simple::AccountSummary {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.user_id.into_into_dart().into_dart(),
+            self.device_id.into_into_dart().into_dart(),
+            self.homeserver_address.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::simple::AccountSummary
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::AccountSummary>
+    for crate::api::simple::AccountSummary
+{
+    fn into_into_dart(self) -> crate::api::simple::AccountSummary {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::simple::LoginError {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::InvalidServerAddress => 0.into_dart(),
+            Self::InvalidInput => 1.into_dart(),
+            Self::PasswordLoginUnsupported => 2.into_dart(),
+            Self::InvalidCredentials => 3.into_dart(),
+            Self::Network => 4.into_dart(),
+            Self::Tls => 5.into_dart(),
+            Self::RateLimited => 6.into_dart(),
+            Self::AlreadyAuthenticated => 7.into_dart(),
+            Self::LoginInProgress => 8.into_dart(),
+            Self::UnusableHomeserver => 9.into_dart(),
+            Self::Internal => 10.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::simple::LoginError
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::LoginError>
+    for crate::api::simple::LoginError
+{
+    fn into_into_dart(self) -> crate::api::simple::LoginError {
+        self
+    }
+}
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::simple::ProbeError {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -235,6 +366,15 @@ impl SseEncode for String {
     }
 }
 
+impl SseEncode for crate::api::simple::AccountSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.user_id, serializer);
+        <String>::sse_encode(self.device_id, serializer);
+        <String>::sse_encode(self.homeserver_address, serializer);
+    }
+}
+
 impl SseEncode for bool {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -256,6 +396,31 @@ impl SseEncode for Vec<u8> {
         for item in self {
             <u8>::sse_encode(item, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::api::simple::LoginError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::simple::LoginError::InvalidServerAddress => 0,
+                crate::api::simple::LoginError::InvalidInput => 1,
+                crate::api::simple::LoginError::PasswordLoginUnsupported => 2,
+                crate::api::simple::LoginError::InvalidCredentials => 3,
+                crate::api::simple::LoginError::Network => 4,
+                crate::api::simple::LoginError::Tls => 5,
+                crate::api::simple::LoginError::RateLimited => 6,
+                crate::api::simple::LoginError::AlreadyAuthenticated => 7,
+                crate::api::simple::LoginError::LoginInProgress => 8,
+                crate::api::simple::LoginError::UnusableHomeserver => 9,
+                crate::api::simple::LoginError::Internal => 10,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
     }
 }
 
