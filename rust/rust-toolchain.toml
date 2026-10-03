@@ -1,5 +1,5 @@
 [toolchain]
-# Pin the Rust version for reproducible desktop builds.
+# Fixa a versão Rust para builds desktop reproduzíveis.
 channel = "1.99.0"
 profile = "minimal"
 components = ["rustfmt", "clippy"]

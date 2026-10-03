@@ -8,6 +8,9 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 flutter_rust_bridge = "=2.13.0"
+matrix-sdk = { version = "=0.19.1", default-features = false, features = ["rustls-aws-lc-rs"] }
+rustls = { version = "0.23", default-features = false }
+url = "2.5"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }

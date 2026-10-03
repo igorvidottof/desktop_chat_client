@@ -6,4 +6,39 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-Future<String> hello() => RustLib.instance.api.crateApiSimpleHello();
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `eq`, `eq`, `fmt`, `fmt`
+
+/// Consulta os métodos de acesso sem autenticar ou reter um cliente global.
+Future<ServerInfo> probeServer({required String address}) =>
+    RustLib.instance.api.crateApiSimpleProbeServer(address: address);
+
+/// Categorias estáveis; detalhes do SDK e do servidor não atravessam a ponte.
+enum ProbeError {
+  invalidServerAddress,
+  network,
+  tls,
+  unusableHomeserver,
+  internal,
+}
+
+/// Informações da aplicação obtidas somente após uma resposta Matrix válida.
+class ServerInfo {
+  final String serverAddress;
+  final bool supportsPasswordLogin;
+
+  const ServerInfo({
+    required this.serverAddress,
+    required this.supportsPasswordLogin,
+  });
+
+  @override
+  int get hashCode => serverAddress.hashCode ^ supportsPasswordLogin.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ServerInfo &&
+          runtimeType == other.runtimeType &&
+          serverAddress == other.serverAddress &&
+          supportsPasswordLogin == other.supportsPasswordLogin;
+}
