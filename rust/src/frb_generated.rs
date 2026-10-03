@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -992163530;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1532390094;
 
 // Section: executor
 
@@ -47,6 +47,41 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__api__simple__initialize_session_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "initialize_session",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::api::simple::SessionError>(
+                    (move || async move {
+                        let output_ok = crate::api::simple::initialize_session().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__simple__list_conversations_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -268,10 +303,25 @@ impl SseDecode for crate::api::simple::LoginError {
             6 => crate::api::simple::LoginError::RateLimited,
             7 => crate::api::simple::LoginError::AlreadyAuthenticated,
             8 => crate::api::simple::LoginError::LoginInProgress,
-            9 => crate::api::simple::LoginError::UnusableHomeserver,
-            10 => crate::api::simple::LoginError::Internal,
+            9 => crate::api::simple::LoginError::SecureStorage,
+            10 => crate::api::simple::LoginError::Persistence,
+            11 => crate::api::simple::LoginError::UnusableHomeserver,
+            12 => crate::api::simple::LoginError::Internal,
             _ => unreachable!("Invalid variant for LoginError: {}", inner),
         };
+    }
+}
+
+impl SseDecode for Option<crate::api::simple::AccountSummary> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::simple::AccountSummary>::sse_decode(
+                deserializer,
+            ));
+        } else {
+            return None;
+        }
     }
 }
 
@@ -302,6 +352,35 @@ impl SseDecode for crate::api::simple::ServerInfo {
     }
 }
 
+impl SseDecode for crate::api::simple::SessionError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::simple::SessionError::OperationInProgress,
+            1 => crate::api::simple::SessionError::Network,
+            2 => crate::api::simple::SessionError::Tls,
+            3 => crate::api::simple::SessionError::InvalidSession,
+            4 => crate::api::simple::SessionError::CorruptedSession,
+            5 => crate::api::simple::SessionError::SecureStorage,
+            6 => crate::api::simple::SessionError::Persistence,
+            7 => crate::api::simple::SessionError::Internal,
+            _ => unreachable!("Invalid variant for SessionError: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::simple::SessionState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_account =
+            <Option<crate::api::simple::AccountSummary>>::sse_decode(deserializer);
+        return crate::api::simple::SessionState {
+            account: var_account,
+        };
+    }
+}
+
 impl SseDecode for u8 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -318,9 +397,10 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__simple__list_conversations_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__simple__login_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__simple__probe_server_impl(port, ptr, rust_vec_len, data_len),
+        1 => wire__crate__api__simple__initialize_session_impl(port, ptr, rust_vec_len, data_len),
+        2 => wire__crate__api__simple__list_conversations_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__simple__login_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__simple__probe_server_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -420,8 +500,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::simple::LoginError {
             Self::RateLimited => 6.into_dart(),
             Self::AlreadyAuthenticated => 7.into_dart(),
             Self::LoginInProgress => 8.into_dart(),
-            Self::UnusableHomeserver => 9.into_dart(),
-            Self::Internal => 10.into_dart(),
+            Self::SecureStorage => 9.into_dart(),
+            Self::Persistence => 10.into_dart(),
+            Self::UnusableHomeserver => 11.into_dart(),
+            Self::Internal => 12.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -479,6 +561,50 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::ServerInfo>
     for crate::api::simple::ServerInfo
 {
     fn into_into_dart(self) -> crate::api::simple::ServerInfo {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::simple::SessionError {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::OperationInProgress => 0.into_dart(),
+            Self::Network => 1.into_dart(),
+            Self::Tls => 2.into_dart(),
+            Self::InvalidSession => 3.into_dart(),
+            Self::CorruptedSession => 4.into_dart(),
+            Self::SecureStorage => 5.into_dart(),
+            Self::Persistence => 6.into_dart(),
+            Self::Internal => 7.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::simple::SessionError
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::SessionError>
+    for crate::api::simple::SessionError
+{
+    fn into_into_dart(self) -> crate::api::simple::SessionError {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::simple::SessionState {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.account.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::simple::SessionState
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::simple::SessionState>
+    for crate::api::simple::SessionState
+{
+    fn into_into_dart(self) -> crate::api::simple::SessionState {
         self
     }
 }
@@ -575,14 +701,26 @@ impl SseEncode for crate::api::simple::LoginError {
                 crate::api::simple::LoginError::RateLimited => 6,
                 crate::api::simple::LoginError::AlreadyAuthenticated => 7,
                 crate::api::simple::LoginError::LoginInProgress => 8,
-                crate::api::simple::LoginError::UnusableHomeserver => 9,
-                crate::api::simple::LoginError::Internal => 10,
+                crate::api::simple::LoginError::SecureStorage => 9,
+                crate::api::simple::LoginError::Persistence => 10,
+                crate::api::simple::LoginError::UnusableHomeserver => 11,
+                crate::api::simple::LoginError::Internal => 12,
                 _ => {
                     unimplemented!("");
                 }
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for Option<crate::api::simple::AccountSummary> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::simple::AccountSummary>::sse_encode(value, serializer);
+        }
     }
 }
 
@@ -610,6 +748,35 @@ impl SseEncode for crate::api::simple::ServerInfo {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.server_address, serializer);
         <bool>::sse_encode(self.supports_password_login, serializer);
+    }
+}
+
+impl SseEncode for crate::api::simple::SessionError {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::simple::SessionError::OperationInProgress => 0,
+                crate::api::simple::SessionError::Network => 1,
+                crate::api::simple::SessionError::Tls => 2,
+                crate::api::simple::SessionError::InvalidSession => 3,
+                crate::api::simple::SessionError::CorruptedSession => 4,
+                crate::api::simple::SessionError::SecureStorage => 5,
+                crate::api::simple::SessionError::Persistence => 6,
+                crate::api::simple::SessionError::Internal => 7,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::simple::SessionState {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Option<crate::api::simple::AccountSummary>>::sse_encode(self.account, serializer);
     }
 }
 

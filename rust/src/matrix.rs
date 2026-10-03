@@ -2,7 +2,7 @@ use std::{error::Error, time::Duration};
 
 use matrix_sdk::{
     config::RequestConfig, reqwest, ruma::api::client::session::get_login_types::v3::LoginType,
-    Client, ClientBuildError, HttpError,
+    Client, ClientBuildError, ClientBuilder, HttpError,
 };
 use url::Url;
 
@@ -47,6 +47,10 @@ pub(crate) async fn probe(address: &str) -> Result<ServerInfo, ProbeError> {
 }
 
 pub(crate) async fn build_client(url: Url) -> Result<Client, ProbeError> {
+    client_builder(url)?.build().await.map_err(map_build_error)
+}
+
+pub(crate) fn client_builder(url: Url) -> Result<ClientBuilder, ProbeError> {
     // Sem redirecionamentos: o endereço explícito não pode migrar para HTTP.
     let http_client = reqwest::Client::builder()
         .https_only(true)
@@ -55,7 +59,7 @@ pub(crate) async fn build_client(url: Url) -> Result<Client, ProbeError> {
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|_| ProbeError::Internal)?;
-    Client::builder()
+    Ok(Client::builder()
         .homeserver_url(url.as_str())
         // A resposta de login não pode trocar o destino explícito por outro URL.
         .respect_login_well_known(false)
@@ -64,10 +68,7 @@ pub(crate) async fn build_client(url: Url) -> Result<Client, ProbeError> {
             RequestConfig::default()
                 .retry_limit(0)
                 .timeout(Duration::from_secs(15)),
-        )
-        .build()
-        .await
-        .map_err(map_build_error)
+        ))
 }
 
 pub(crate) fn supports_password(flows: &[LoginType]) -> bool {

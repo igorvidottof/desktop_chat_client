@@ -9,6 +9,7 @@ Future<void> main() async {
   await RustLib.init();
   runApp(
     MyApp(
+      initialize: initializeSession,
       loadConversations: listConversations,
       probe: (address) => probeServer(address: address),
       authenticate:
@@ -28,16 +29,20 @@ typedef PasswordLogin =
       String password,
     );
 
+typedef SessionInitializer = Future<SessionState> Function();
+
 typedef ServerProbe = Future<ServerInfo> Function(String address);
 
 class MyApp extends StatelessWidget {
   const MyApp({
     super.key,
+    required this.initialize,
     required this.probe,
     required this.authenticate,
     required this.loadConversations,
   });
 
+  final SessionInitializer initialize;
   final ServerProbe probe;
   final PasswordLogin authenticate;
   final ConversationLoader loadConversations;
@@ -50,6 +55,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
       home: LoginScreen(
+        initialize: initialize,
         probe: probe,
         authenticate: authenticate,
         loadConversations: loadConversations,
@@ -61,11 +67,13 @@ class MyApp extends StatelessWidget {
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
     super.key,
+    required this.initialize,
     required this.probe,
     required this.authenticate,
     required this.loadConversations,
   });
 
+  final SessionInitializer initialize;
   final ServerProbe probe;
   final PasswordLogin authenticate;
   final ConversationLoader loadConversations;
@@ -78,6 +86,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final _address = TextEditingController(text: 'https://matrix.org');
   final _username = TextEditingController();
   final _password = TextEditingController();
+  bool _initializing = true;
+  SessionError? _sessionError;
   bool _loading = false;
   bool _loggingIn = false;
   AccountSummary? _account;
@@ -85,8 +95,35 @@ class _LoginScreenState extends State<LoginScreen> {
   ServerInfo? _info;
   ProbeError? _error;
 
+  @override
+  void initState() {
+    super.initState();
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    setState(() {
+      _initializing = true;
+      _sessionError = null;
+    });
+    try {
+      // Rust é a autoridade também após hot restart; Dart só recebe resumo seguro.
+      final state = await widget.initialize();
+      if (!mounted) return;
+      setState(() => _account = state.account);
+    } on SessionError catch (error) {
+      if (!mounted) return;
+      setState(() => _sessionError = error);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _sessionError = SessionError.internal);
+    } finally {
+      if (mounted) setState(() => _initializing = false);
+    }
+  }
+
   Future<void> _probe() async {
-    if (_loading) return;
+    if (_loading || _initializing) return;
     setState(() {
       _loading = true;
       _info = null;
@@ -110,7 +147,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    if (_loading || _account != null) return;
+    if (_loading || _initializing || _account != null) return;
     setState(() {
       _loading = true;
       _loggingIn = true;
@@ -128,7 +165,10 @@ class _LoginScreenState extends State<LoginScreen> {
       _password.clear();
       final account = await pending;
       if (!mounted) return;
-      setState(() => _account = account);
+      setState(() {
+        _account = account;
+        _sessionError = null;
+      });
     } on LoginError catch (error) {
       if (!mounted) return;
       setState(() => _loginError = error);
@@ -157,6 +197,38 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_initializing ||
+        (_sessionError != null &&
+            _sessionError != SessionError.invalidSession)) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Acesso Matrix')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_initializing) ...[
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  const Text('Verificando sessão…'),
+                ] else ...[
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(sessionErrorMessage(_sessionError!)),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: _initialize,
+                    child: const Text('Tentar novamente'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Acesso Matrix')),
       body: Center(
@@ -167,9 +239,12 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Entre com sua conta Matrix. A sessão dura até fechar o aplicativo.',
-                ),
+                if (_account == null)
+                  const Text(
+                    'Entre com sua conta Matrix. A sessão será salva com segurança.',
+                  ),
+                if (_sessionError == SessionError.invalidSession)
+                  Text(sessionErrorMessage(SessionError.invalidSession)),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _address,
@@ -300,11 +375,33 @@ String loginErrorMessage(LoginError error) => switch (error) {
   LoginError.rateLimited =>
     'Muitas tentativas. Aguarde antes de tentar novamente.',
   LoginError.alreadyAuthenticated =>
-    'Já existe uma conta autenticada. Reinicie o aplicativo para entrar com outra conta.',
+    'Já existe uma conta autenticada. Verifique a sessão novamente.',
   LoginError.loginInProgress =>
     'Já existe uma tentativa de login em andamento.',
   LoginError.unusableHomeserver => probeErrorMessage(
     ProbeError.unusableHomeserver,
   ),
+  LoginError.secureStorage =>
+    'O armazenamento seguro não está disponível. O login não foi concluído. Desbloqueie o cofre do sistema e tente novamente.',
+  LoginError.persistence =>
+    'Não foi possível salvar a sessão. O login não foi concluído. Verifique o armazenamento e tente novamente.',
   LoginError.internal => 'Não foi possível concluir o login. Tente novamente.',
+};
+
+String sessionErrorMessage(SessionError error) => switch (error) {
+  SessionError.operationInProgress =>
+    'Uma operação de autenticação está em andamento. Tente novamente.',
+  SessionError.network =>
+    'Não foi possível validar a sessão com o servidor. Verifique a conexão e tente novamente. A sessão salva foi preservada.',
+  SessionError.tls => probeErrorMessage(ProbeError.tls),
+  SessionError.invalidSession =>
+    'A sessão foi rejeitada pelo servidor. Entre novamente.',
+  SessionError.corruptedSession =>
+    'A sessão salva está incompleta ou não pôde ser lida. Verifique o armazenamento e tente novamente.',
+  SessionError.secureStorage =>
+    'Não foi possível acessar o armazenamento seguro. Desbloqueie o cofre do sistema e tente novamente.',
+  SessionError.persistence =>
+    'Não foi possível acessar os dados da sessão. Verifique o armazenamento e tente novamente.',
+  SessionError.internal =>
+    'Não foi possível verificar a sessão. Tente novamente.',
 };

@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Consulta os métodos de acesso sem autenticar ou reter um cliente global.
 Future<ServerInfo> probeServer({required String address}) =>
@@ -26,6 +26,10 @@ Future<AccountSummary> login({
 /// Sincroniza uma única vez e retorna somente salas ingressadas que não são espaços.
 Future<List<ConversationSummary>> listConversations() =>
     RustLib.instance.api.crateApiSimpleListConversations();
+
+/// Consulta primeiro a autoridade em memória, inclusive após hot restart do Dart.
+Future<SessionState> initializeSession() =>
+    RustLib.instance.api.crateApiSimpleInitializeSession();
 
 /// Projeção pública da conta; a sessão e seus segredos permanecem no SDK em Rust.
 class AccountSummary {
@@ -93,6 +97,8 @@ enum LoginError {
   rateLimited,
   alreadyAuthenticated,
   loginInProgress,
+  secureStorage,
+  persistence,
   unusableHomeserver,
   internal,
 }
@@ -126,4 +132,33 @@ class ServerInfo {
           runtimeType == other.runtimeType &&
           serverAddress == other.serverAddress &&
           supportsPasswordLogin == other.supportsPasswordLogin;
+}
+
+/// Falhas locais e remotas classificadas sem conteúdo de arquivos ou do cofre.
+enum SessionError {
+  operationInProgress,
+  network,
+  tls,
+  invalidSession,
+  corruptedSession,
+  secureStorage,
+  persistence,
+  internal,
+}
+
+/// Estado seguro: nenhum token, DTO do SDK ou chave pode atravessar FRB.
+class SessionState {
+  final AccountSummary? account;
+
+  const SessionState({this.account});
+
+  @override
+  int get hashCode => account.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionState &&
+          runtimeType == other.runtimeType &&
+          account == other.account;
 }

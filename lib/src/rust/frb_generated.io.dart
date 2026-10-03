@@ -28,6 +28,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  AccountSummary dco_decode_box_autoadd_account_summary(dynamic raw);
+
+  @protected
   ConversationError dco_decode_conversation_error(dynamic raw);
 
   @protected
@@ -46,10 +49,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LoginError dco_decode_login_error(dynamic raw);
 
   @protected
+  AccountSummary? dco_decode_opt_box_autoadd_account_summary(dynamic raw);
+
+  @protected
   ProbeError dco_decode_probe_error(dynamic raw);
 
   @protected
   ServerInfo dco_decode_server_info(dynamic raw);
+
+  @protected
+  SessionError dco_decode_session_error(dynamic raw);
+
+  @protected
+  SessionState dco_decode_session_state(dynamic raw);
 
   @protected
   int dco_decode_u_8(dynamic raw);
@@ -62,6 +74,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  AccountSummary sse_decode_box_autoadd_account_summary(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ConversationError sse_decode_conversation_error(SseDeserializer deserializer);
@@ -86,10 +103,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LoginError sse_decode_login_error(SseDeserializer deserializer);
 
   @protected
+  AccountSummary? sse_decode_opt_box_autoadd_account_summary(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ProbeError sse_decode_probe_error(SseDeserializer deserializer);
 
   @protected
   ServerInfo sse_decode_server_info(SseDeserializer deserializer);
+
+  @protected
+  SessionError sse_decode_session_error(SseDeserializer deserializer);
+
+  @protected
+  SessionState sse_decode_session_state(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_8(SseDeserializer deserializer);
@@ -105,6 +133,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_account_summary(
+    AccountSummary self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_conversation_error(
@@ -137,10 +171,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_login_error(LoginError self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_account_summary(
+    AccountSummary? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_probe_error(ProbeError self, SseSerializer serializer);
 
   @protected
   void sse_encode_server_info(ServerInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_session_error(SessionError self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_session_state(SessionState self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_8(int self, SseSerializer serializer);

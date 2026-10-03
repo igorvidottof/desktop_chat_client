@@ -19,6 +19,7 @@ void main() {
         },
       ),
     );
+    await tester.pump();
     await tester.enterText(find.byType(TextField).first, 'https://example.org');
     await tester.tap(find.text('Verificar servidor'));
     await tester.pump();
@@ -56,6 +57,7 @@ void main() {
         },
       ),
     );
+    await tester.pump();
     await tester.tap(find.text('Verificar servidor'));
     await tester.pumpAndSettle();
     expect(find.text('Login com senha: não suportado'), findsOneWidget);
@@ -72,6 +74,7 @@ void main() {
   for (final error in ProbeError.values) {
     testWidgets('Apresenta mensagem segura para ${error.name}', (tester) async {
       await tester.pumpWidget(probeApp(probe: (_) async => throw error));
+      await tester.pump();
       await tester.tap(find.text('Verificar servidor'));
       await tester.pumpAndSettle();
       expect(find.text(probeErrorMessage(error)), findsOneWidget);
@@ -86,6 +89,7 @@ void main() {
         },
       ),
     );
+    await tester.pump();
     await tester.tap(find.text('Verificar servidor'));
     await tester.pumpAndSettle();
     expect(find.text(probeErrorMessage(ProbeError.internal)), findsOneWidget);
@@ -95,6 +99,7 @@ void main() {
   testWidgets('Ignora a conclusão depois de fechar a tela', (tester) async {
     final pending = Completer<ServerInfo>();
     await tester.pumpWidget(probeApp(probe: (_) => pending.future));
+    await tester.pump();
     await tester.tap(find.text('Verificar servidor'));
     await tester.pump();
     await tester.pumpWidget(const SizedBox());
@@ -105,6 +110,7 @@ void main() {
 }
 
 Widget probeApp({required ServerProbe probe}) => MyApp(
+  initialize: () async => const SessionState(account: null),
   loadConversations: () async => [],
   probe: probe,
   authenticate: (_, _, _) async => throw LoginError.internal,

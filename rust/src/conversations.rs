@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use matrix_sdk::{config::SyncSettings, ruma::api::error::ErrorKind, HttpError};
 
 use crate::{
@@ -9,10 +11,8 @@ pub(crate) async fn list() -> Result<Vec<ConversationSummary>, ConversationError
     // snapshot libera o mutex antes da rede e mantém apenas o cliente já autenticado.
     let client = auth::authenticated_client()?;
     let result = async {
-        // joined_rooms só conhece o estado recebido. Um sync único preenche esse
-        // estado; não instalamos loop, stream, tarefas ou assinaturas de eventos.
         client
-            .sync_once(SyncSettings::default())
+            .sync_once(conversation_sync_settings())
             .await
             .map_err(map_sdk_error)?;
         let mut summaries = Vec::new();
@@ -33,6 +33,13 @@ pub(crate) async fn list() -> Result<Vec<ConversationSummary>, ConversationError
     // Descarta inclusive falhas antigas se o cliente ativo mudar durante a operação.
     auth::ensure_current(&client)?;
     result
+}
+
+fn conversation_sync_settings() -> SyncSettings {
+    // Esta atualização finita da UI não é o futuro loop de sync contínuo.
+    // O SDK ainda reutiliza seu token persistido; timeout zero evita que esta
+    // requisição única faça long polling intencional à espera de eventos futuros.
+    SyncSettings::default().timeout(Duration::ZERO)
 }
 
 fn summary(id: String, name: Option<String>) -> ConversationSummary {
@@ -79,6 +86,14 @@ mod tests {
             UnknownTokenErrorData,
         },
     };
+
+    #[test]
+    fn finite_refresh_does_not_long_poll_or_request_full_state() {
+        // O SDK 0.19.1 não expõe getters; Debug mostra estas opções sem o token.
+        let settings = format!("{:?}", conversation_sync_settings());
+        assert!(settings.contains("timeout: 0ns"), "{settings}");
+        assert!(settings.contains("full_state: false"), "{settings}");
+    }
 
     #[test]
     fn maps_metadata_without_parsing_identifier_or_remote_markup() {

@@ -14,6 +14,7 @@ const account = AccountSummary(
 Finder field(String label) => find.widgetWithText(TextField, label);
 
 Widget loginApp(PasswordLogin authenticate) => MyApp(
+  initialize: () async => const SessionState(account: null),
   loadConversations: () async => [],
   probe: (_) async => throw ProbeError.internal,
   authenticate: authenticate,
@@ -34,6 +35,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(loginApp((_, _, _) async => account));
+    await tester.pump();
     final password = tester.widget<TextField>(field('Senha'));
     expect(password.obscureText, isTrue);
     expect(password.autofillHints, [AutofillHints.password]);
@@ -59,6 +61,7 @@ void main() {
           return pending.future;
         }),
       );
+      await tester.pump();
       await fillForm(tester);
       final controller = tester.widget<TextField>(field('Senha')).controller!;
       await tester.tap(find.text('Entrar'));
@@ -90,6 +93,7 @@ void main() {
       'Falha ${error.name} mostra mensagem segura e libera nova tentativa',
       (tester) async {
         await tester.pumpWidget(loginApp((_, _, _) async => throw error));
+        await tester.pump();
         await fillForm(tester);
         await tester.tap(find.text('Entrar'));
         await tester.pumpAndSettle();
@@ -119,6 +123,7 @@ void main() {
         return account;
       }),
     );
+    await tester.pump();
     await fillForm(tester);
     await tester.tap(find.text('Entrar'));
     await tester.pumpAndSettle();
@@ -138,6 +143,7 @@ void main() {
       await tester.pumpWidget(
         loginApp((_, _, _) => throw StateError('untrusted fixture detail')),
       );
+      await tester.pump();
       await fillForm(tester);
       await tester.tap(find.text('Entrar'));
       await tester.pumpAndSettle();
@@ -156,6 +162,7 @@ void main() {
     ) async {
       final pending = Completer<AccountSummary>();
       await tester.pumpWidget(loginApp((_, _, _) => pending.future));
+      await tester.pump();
       await fillForm(tester);
       await tester.tap(find.text('Entrar'));
       await tester.pump();

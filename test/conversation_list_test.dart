@@ -108,6 +108,7 @@ void main() {
     var calls = 0;
     await tester.pumpWidget(
       MyApp(
+        initialize: () async => const SessionState(account: null),
         probe: (_) async => throw ProbeError.internal,
         authenticate:
             (_, _, _) async => const AccountSummary(
@@ -123,6 +124,7 @@ void main() {
         },
       ),
     );
+    await tester.pump();
     expect(calls, 0);
     await tester.tap(find.text('Entrar'));
     await tester.pumpAndSettle();

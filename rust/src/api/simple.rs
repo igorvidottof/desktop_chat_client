@@ -40,6 +40,8 @@ pub enum LoginError {
     RateLimited,
     AlreadyAuthenticated,
     LoginInProgress,
+    SecureStorage,
+    Persistence,
     UnusableHomeserver,
     Internal,
 }
@@ -74,4 +76,28 @@ pub enum ConversationError {
 /// Sincroniza uma única vez e retorna somente salas ingressadas que não são espaços.
 pub async fn list_conversations() -> Result<Vec<ConversationSummary>, ConversationError> {
     crate::conversations::list().await
+}
+
+/// Estado seguro: nenhum token, DTO do SDK ou chave pode atravessar FRB.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionState {
+    pub account: Option<AccountSummary>,
+}
+
+/// Falhas locais e remotas classificadas sem conteúdo de arquivos ou do cofre.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionError {
+    OperationInProgress,
+    Network,
+    Tls,
+    InvalidSession,
+    CorruptedSession,
+    SecureStorage,
+    Persistence,
+    Internal,
+}
+
+/// Consulta primeiro a autoridade em memória, inclusive após hot restart do Dart.
+pub async fn initialize_session() -> Result<SessionState, SessionError> {
+    crate::auth::initialize().await
 }

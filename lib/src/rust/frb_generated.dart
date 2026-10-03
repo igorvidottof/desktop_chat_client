@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -992163530;
+  int get rustContentHash => 1532390094;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -76,6 +76,8 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  Future<SessionState> crateApiSimpleInitializeSession();
+
   Future<List<ConversationSummary>> crateApiSimpleListConversations();
 
   Future<AccountSummary> crateApiSimpleLogin({
@@ -96,7 +98,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
-  Future<List<ConversationSummary>> crateApiSimpleListConversations() {
+  Future<SessionState> crateApiSimpleInitializeSession() {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -105,6 +107,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             generalizedFrbRustBinding,
             serializer,
             funcId: 1,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_session_state,
+          decodeErrorData: sse_decode_session_error,
+        ),
+        constMeta: kCrateApiSimpleInitializeSessionConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSimpleInitializeSessionConstMeta =>
+      const TaskConstMeta(debugName: "initialize_session", argNames: []);
+
+  @override
+  Future<List<ConversationSummary>> crateApiSimpleListConversations() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
             port: port_,
           );
         },
@@ -138,7 +167,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 3,
             port: port_,
           );
         },
@@ -168,7 +197,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -209,6 +238,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   bool dco_decode_bool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as bool;
+  }
+
+  @protected
+  AccountSummary dco_decode_box_autoadd_account_summary(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_account_summary(raw);
   }
 
   @protected
@@ -254,6 +289,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  AccountSummary? dco_decode_opt_box_autoadd_account_summary(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_account_summary(raw);
+  }
+
+  @protected
   ProbeError dco_decode_probe_error(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return ProbeError.values[raw as int];
@@ -268,6 +309,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return ServerInfo(
       serverAddress: dco_decode_String(arr[0]),
       supportsPasswordLogin: dco_decode_bool(arr[1]),
+    );
+  }
+
+  @protected
+  SessionError dco_decode_session_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return SessionError.values[raw as int];
+  }
+
+  @protected
+  SessionState dco_decode_session_state(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return SessionState(
+      account: dco_decode_opt_box_autoadd_account_summary(arr[0]),
     );
   }
 
@@ -301,6 +359,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   bool sse_decode_bool(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint8() != 0;
+  }
+
+  @protected
+  AccountSummary sse_decode_box_autoadd_account_summary(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_account_summary(deserializer));
   }
 
   @protected
@@ -357,6 +423,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  AccountSummary? sse_decode_opt_box_autoadd_account_summary(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_account_summary(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   ProbeError sse_decode_probe_error(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
@@ -372,6 +451,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       serverAddress: var_serverAddress,
       supportsPasswordLogin: var_supportsPasswordLogin,
     );
+  }
+
+  @protected
+  SessionError sse_decode_session_error(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return SessionError.values[inner];
+  }
+
+  @protected
+  SessionState sse_decode_session_state(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_account = sse_decode_opt_box_autoadd_account_summary(deserializer);
+    return SessionState(account: var_account);
   }
 
   @protected
@@ -401,6 +494,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_bool(bool self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint8(self ? 1 : 0);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_account_summary(
+    AccountSummary self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_account_summary(self, serializer);
   }
 
   @protected
@@ -457,6 +559,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_account_summary(
+    AccountSummary? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_account_summary(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_probe_error(ProbeError self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
@@ -467,6 +582,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.serverAddress, serializer);
     sse_encode_bool(self.supportsPasswordLogin, serializer);
+  }
+
+  @protected
+  void sse_encode_session_error(SessionError self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_session_state(SessionState self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_opt_box_autoadd_account_summary(self.account, serializer);
   }
 
   @protected
