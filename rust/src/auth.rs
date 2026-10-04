@@ -204,7 +204,7 @@ async fn logout_reserved() -> Result<LogoutResult, LogoutError> {
         .ok_or(LogoutError::Internal)?
         .store_id
         .clone();
-    let cleanup_id = id.clone();
+    let cleanup_id = id;
     complete_logout(
         attempt,
         |client| async move {
@@ -223,17 +223,10 @@ async fn logout_reserved() -> Result<LogoutResult, LogoutError> {
                 _ => LogoutError::LocalCleanup,
             })
         },
-        |client| async move {
-            let state_closed = client.state_store().close().await.is_ok();
-            let cache_closed = client.event_cache_store().close().await.is_ok();
-            let media_closed = client.media_store().close().await.is_ok();
-            state_closed && cache_closed && media_closed
-        },
-        || async move {
-            session_store::blocking(move || SessionStore::platform()?.remove_store(&id))
-                .await
-                .is_ok()
-        },
+        |client| async move { client.pause().await.is_ok() },
+        // pause is a supported close request, not proof that every SDK handle
+        // disappeared. Always defer a store used by this native process.
+        || std::future::ready(false),
     )
     .await
 }
@@ -257,9 +250,9 @@ where
     ))
     .await;
     remove_restoration().await?;
-    // O SDK oferece fechamento explícito das três bases habilitadas. Não apagar
-    // SQLite aberto: se qualquer close falhar, preservar apenas o store cifrado,
-    // já sem tokens/passphrase no cofre, e comunicar limpeza física pendente.
+    // Restoration authority is already revoked. A close failure cannot restore
+    // it; production retains the tracked directory until a later process start.
+    // The deletion seam is only eligible when the caller can establish safety.
     let closed = close(Arc::clone(
         attempt.client.as_ref().ok_or(LogoutError::Internal)?,
     ))
@@ -359,6 +352,9 @@ async fn login_reserved(
 ) -> Result<AccountSummary, LoginError> {
     let summary = AUTH
         .authenticate(|| async move {
+            session_store::blocking(session_store::initialize_local_lifecycle)
+                .await
+                .map_err(map_persistence_error)?;
             let (store_id, passphrase, path) =
                 session_store::blocking(|| SessionStore::platform()?.prepare())
                     .await
@@ -437,6 +433,7 @@ async fn initialize_reserved() -> Result<SessionState, SessionError> {
     let _operation = CLIENT_OPERATIONS.read().await;
     let client = AUTH
         .initialize(|| async {
+            session_store::blocking(session_store::initialize_local_lifecycle).await?;
             let saved = session_store::blocking(|| SessionStore::platform()?.load()).await?;
             let Some(saved) = saved else {
                 return Ok(None);

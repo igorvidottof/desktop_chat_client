@@ -239,8 +239,6 @@ class _LoginScreenState extends State<LoginScreen> {
         _logoutNotice = [
           if (!remoteConfirmed)
             'A sessão local foi removida. Não foi possível confirmar a saída no servidor.',
-          if (result.storeCleanupPending)
-            'A sessão não pode ser restaurada, mas a remoção dos dados locais restantes ficou pendente.',
         ].join(' ');
       });
     } on LogoutError catch (error) {

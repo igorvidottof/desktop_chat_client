@@ -2,6 +2,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 use directories::ProjectDirs;
@@ -13,7 +14,86 @@ use crate::{api::simple::SessionError, matrix};
 
 const SERVICE: &str = "desktop_chat_client.matrix.v1";
 
-// O único arquivo da aplicação contém um identificador opaco, nunca credenciais.
+// Retained until native process exit, including logout and Dart hot restart.
+// Never unlink this file: a second inode would permit two owners of one root.
+static PROCESS_LOCK: Mutex<Option<fs::File>> = Mutex::new(None);
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CleanupRecord {
+    version: u8,
+    store_id: String,
+}
+
+struct ProcessOwnership {
+    file: fs::File,
+    root: PathBuf,
+}
+
+impl ProcessOwnership {
+    fn acquire(root: &Path) -> Result<Self, SessionError> {
+        fs::create_dir_all(root).map_err(|_| SessionError::Persistence)?;
+        reject_symlink(root)?;
+        let path = root.join("process.lock");
+        reject_symlink(&path)?;
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)
+            .map_err(|_| SessionError::Persistence)?;
+        file.try_lock().map_err(|error| match error {
+            std::fs::TryLockError::WouldBlock => SessionError::OperationInProgress,
+            std::fs::TryLockError::Error(_) => SessionError::Persistence,
+        })?;
+        Ok(Self {
+            file,
+            root: root.to_owned(),
+        })
+    }
+}
+
+pub(crate) fn initialize_local_lifecycle() -> Result<(), SessionError> {
+    initialize_lifecycle(&PROCESS_LOCK, &SessionStore::platform()?)
+}
+
+fn initialize_lifecycle<S: Secrets>(
+    process_lock: &Mutex<Option<fs::File>>,
+    store: &SessionStore<S>,
+) -> Result<(), SessionError> {
+    let mut lock = process_lock.lock().map_err(|_| SessionError::Internal)?;
+    if lock.is_none() {
+        let owner = ProcessOwnership::acquire(&store.root)?;
+        let pending = store.cleanup_at_process_start(&owner)?;
+        if pending > 0 {
+            eprintln!("Matrix session-store cleanup remains pending.");
+        }
+        *lock = Some(owner.file);
+    }
+    Ok(())
+}
+
+fn reject_symlink(path: &Path) -> Result<(), SessionError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(SessionError::CorruptedSession),
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(SessionError::Persistence),
+    }
+}
+
+fn sync_directory(path: &Path) -> Result<(), SessionError> {
+    #[cfg(unix)]
+    fs::File::open(path)
+        .and_then(|dir| dir.sync_all())
+        .map_err(|_| SessionError::Persistence)?;
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
+// O manifest contém um identificador opaco, nunca credenciais.
 // Cada tentativa usa outra pasta: uma falha não mistura contas no store do SDK.
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -110,8 +190,10 @@ impl<S: Secrets> SessionStore<S> {
         Ok(self.root.join("stores").join(id))
     }
 
-    pub(crate) fn load(&self) -> Result<Option<SavedSession>, SessionError> {
-        let bytes = match fs::read(self.root.join("active-session.json")) {
+    fn active_manifest(&self) -> Result<Option<Manifest>, SessionError> {
+        let path = self.root.join("active-session.json");
+        reject_symlink(&path)?;
+        let bytes = match fs::read(path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(_) => return Err(SessionError::Persistence),
@@ -121,6 +203,104 @@ impl<S: Secrets> SessionStore<S> {
         if manifest.version != 1 || !valid_id(&manifest.store_id) {
             return Err(SessionError::CorruptedSession);
         }
+        Ok(Some(manifest))
+    }
+
+    fn cleanup_path(&self, id: &str) -> Result<PathBuf, SessionError> {
+        self.store_path(id)?;
+        Ok(self.root.join(format!("cleanup-{id}.json")))
+    }
+
+    fn read_cleanup(&self, id: &str) -> Result<CleanupRecord, SessionError> {
+        let path = self.cleanup_path(id)?;
+        reject_symlink(&path)?;
+        let record: CleanupRecord =
+            serde_json::from_slice(&fs::read(path).map_err(|_| SessionError::Persistence)?)
+                .map_err(|_| SessionError::CorruptedSession)?;
+        if record.version != 1 || record.store_id != id || !valid_id(&record.store_id) {
+            return Err(SessionError::CorruptedSession);
+        }
+        Ok(record)
+    }
+
+    pub(crate) fn record_cleanup(&self, id: &str) -> Result<(), SessionError> {
+        let path = self.cleanup_path(id)?;
+        if path.exists() {
+            self.read_cleanup(id)?;
+            return sync_directory(&self.root);
+        }
+        let bytes = serde_json::to_vec(&CleanupRecord {
+            version: 1,
+            store_id: id.into(),
+        })
+        .map_err(|_| SessionError::Internal)?;
+        let pending = self.root.join(format!("pending-{}.json", random_hex(16)?));
+        let mut file = fs::File::create_new(&pending).map_err(|_| SessionError::Persistence)?;
+        file.write_all(&bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|_| SessionError::Persistence)?;
+        drop(file);
+        fs::rename(pending, path).map_err(|_| SessionError::Persistence)?;
+        sync_directory(&self.root)
+    }
+
+    // Only called once with newly acquired process ownership, before ANY persistent
+    // SDK client opens. Never call after logout or on a Dart hot restart.
+    fn cleanup_at_process_start(&self, owner: &ProcessOwnership) -> Result<usize, SessionError> {
+        if owner.root != self.root {
+            return Err(SessionError::Persistence);
+        }
+        let mut active = self.active_manifest()?;
+        let mut pending = 0;
+        for entry in fs::read_dir(&self.root).map_err(|_| SessionError::Persistence)? {
+            let entry = entry.map_err(|_| SessionError::Persistence)?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let Some(id) = name
+                .strip_prefix("cleanup-")
+                .and_then(|s| s.strip_suffix(".json"))
+            else {
+                continue;
+            };
+            self.read_cleanup(id)?;
+            // A record expresses intent, not proof of credential revocation. A:
+            // if the credential still exists, protect the store (active or not).
+            match self.secrets.read(id) {
+                Ok(None) => {}
+                Ok(Some(_)) | Err(_) => {
+                    pending += 1;
+                    continue;
+                }
+            }
+            if active
+                .as_ref()
+                .is_some_and(|manifest| manifest.store_id == id)
+            {
+                // B: credential removal was committed, but manifest removal was
+                // interrupted. Remove only this exact now-non-restorable manifest.
+                fs::remove_file(self.root.join("active-session.json"))
+                    .map_err(|_| SessionError::Persistence)?;
+                sync_directory(&self.root)?;
+                active = None;
+            }
+            // C/D: failures retain tracking; absent stores are idempotent success.
+            if self.remove_store(id).is_err() {
+                pending += 1;
+                continue;
+            }
+            if fs::remove_file(self.cleanup_path(id)?).is_err()
+                || sync_directory(&self.root).is_err()
+            {
+                pending += 1;
+            }
+        }
+        Ok(pending)
+    }
+
+    pub(crate) fn load(&self) -> Result<Option<SavedSession>, SessionError> {
+        let Some(manifest) = self.active_manifest()? else {
+            return Ok(None);
+        };
         let encoded = self
             .secrets
             .read(&manifest.store_id)?
@@ -142,7 +322,7 @@ impl<S: Secrets> SessionStore<S> {
     }
 
     pub(crate) fn remove_restoration(&self, id: &str) -> Result<(), SessionError> {
-        self.store_path(id)?;
+        self.record_cleanup(id)?;
         // O cofre reúne sessão e passphrase numa só entrada. Apagá-la primeiro
         // impede restauração mesmo se a retirada durável do manifest falhar.
         // Mantemos o ID no cliente para retry sem reler segredos já removidos.
@@ -167,12 +347,22 @@ impl<S: Secrets> SessionStore<S> {
         Ok(())
     }
 
-    pub(crate) fn remove_store(&self, id: &str) -> Result<(), SessionError> {
-        // Só chamamos após fechar os stores do SDK e descartar o cliente.
+    fn remove_store(&self, id: &str) -> Result<(), SessionError> {
+        // Produção chama somente no início de um novo processo, antes de abrir SDK stores.
         // Nunca removemos a raiz nem stores de outras tentativas/contas.
         let path = self.store_path(id)?;
-        match fs::remove_dir_all(path) {
-            Ok(()) => Ok(()),
+        if self
+            .active_manifest()?
+            .is_some_and(|manifest| manifest.store_id == id)
+            || self.secrets.read(id)?.is_some()
+        {
+            return Err(SessionError::Persistence);
+        }
+        reject_symlink(&self.root)?;
+        reject_symlink(&self.root.join("stores"))?;
+        reject_symlink(&path)?;
+        match fs::remove_dir_all(&path) {
+            Ok(()) => sync_directory(&self.root.join("stores")),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(_) => Err(SessionError::Persistence),
         }
@@ -515,6 +705,221 @@ mod tests {
             .entries
             .borrow()
             .contains_key(&candidate.store_id));
+    }
+
+    fn restart_cleanup(fixture: &Fixture) -> usize {
+        let owner = ProcessOwnership::acquire(&fixture.0.root).unwrap();
+        fixture.0.cleanup_at_process_start(&owner).unwrap()
+    }
+
+    #[test]
+    fn crash_before_credential_removal_protects_active_restorable_store() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        fixture.0.record_cleanup(&saved.store_id).unwrap();
+        assert_eq!(restart_cleanup(&fixture), 1);
+        assert!(fixture.0.load().unwrap().unwrap().session == saved.session);
+        assert!(fixture.0.store_path(&saved.store_id).unwrap().exists());
+        assert_eq!(
+            fixture.0.remove_store(&saved.store_id),
+            Err(SessionError::Persistence)
+        );
+    }
+
+    #[test]
+    fn crash_after_credential_removal_resolves_only_matching_manifest() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        fixture.0.record_cleanup(&saved.store_id).unwrap();
+        fixture.0.secrets.delete(&saved.store_id).unwrap();
+        assert_eq!(restart_cleanup(&fixture), 0);
+        assert!(fixture.0.load().unwrap().is_none());
+        assert!(!fixture.0.store_path(&saved.store_id).unwrap().exists());
+        assert!(!fixture.0.cleanup_path(&saved.store_id).unwrap().exists());
+    }
+
+    #[test]
+    fn revoked_orphan_is_cleaned_before_an_unrelated_session_is_loaded() {
+        let fixture = Fixture::new();
+        let old = fixture.saved();
+        fixture.0.persist(&old).unwrap();
+        fixture.0.remove_restoration(&old.store_id).unwrap();
+        let active = fixture.saved();
+        fixture.0.persist(&active).unwrap();
+        assert_eq!(restart_cleanup(&fixture), 0);
+        assert!(!fixture.0.store_path(&old.store_id).unwrap().exists());
+        assert!(fixture.0.load().unwrap().unwrap().session == active.session);
+        assert!(fixture.0.store_path(&active.store_id).unwrap().exists());
+    }
+
+    #[test]
+    fn deleted_store_with_stale_record_is_idempotently_resolved() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        fixture.0.remove_restoration(&saved.store_id).unwrap();
+        fixture.0.remove_store(&saved.store_id).unwrap();
+        assert!(fixture.0.cleanup_path(&saved.store_id).unwrap().exists());
+        assert_eq!(restart_cleanup(&fixture), 0);
+        assert_eq!(restart_cleanup(&fixture), 0);
+        assert!(!fixture.0.cleanup_path(&saved.store_id).unwrap().exists());
+    }
+
+    #[test]
+    fn deletion_failure_keeps_record_and_does_not_block_unrelated_restoration() {
+        let fixture = Fixture::new();
+        let old = fixture.saved();
+        fixture.0.persist(&old).unwrap();
+        fixture.0.remove_restoration(&old.store_id).unwrap();
+        // Deterministic isolated fixture: a file cannot be removed as a directory.
+        let path = fixture.0.store_path(&old.store_id).unwrap();
+        fs::remove_dir(&path).unwrap();
+        fs::write(&path, b"synthetic-obstruction").unwrap();
+        let active = fixture.saved();
+        fixture.0.persist(&active).unwrap();
+        assert_eq!(restart_cleanup(&fixture), 1);
+        assert!(fixture.0.cleanup_path(&old.store_id).unwrap().exists());
+        assert!(fixture.0.load().unwrap().unwrap().store_id == active.store_id);
+        fs::remove_file(&path).unwrap();
+        assert_eq!(restart_cleanup(&fixture), 0);
+    }
+
+    #[test]
+    fn cleanup_intent_survives_credential_failure_and_contains_no_secrets() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        fixture.0.secrets.fail_delete.set(true);
+        assert_eq!(
+            fixture.0.remove_restoration(&saved.store_id),
+            Err(SessionError::SecureStorage)
+        );
+        assert_eq!(restart_cleanup(&fixture), 1);
+        let bytes = fs::read(fixture.0.cleanup_path(&saved.store_id).unwrap()).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value.as_object().unwrap().len(), 2);
+        for secret in [&saved.passphrase, &saved.session.tokens.access_token] {
+            assert!(!bytes
+                .windows(secret.len())
+                .any(|window| window == secret.as_bytes()));
+        }
+        fixture.0.secrets.fail_delete.set(false);
+        fixture.0.remove_restoration(&saved.store_id).unwrap();
+        assert_eq!(restart_cleanup(&fixture), 0);
+    }
+
+    #[test]
+    fn cleanup_rejects_untrusted_ids_and_mismatched_records() {
+        let fixture = Fixture::new();
+        for id in [
+            "../outside",
+            "/tmp/outside",
+            "",
+            "ABCDEF0123456789abcdef0123456789",
+            "a/../../outside",
+        ] {
+            assert!(fixture.0.record_cleanup(id).is_err());
+            assert!(fixture.0.remove_store(id).is_err());
+        }
+        let saved = fixture.saved();
+        let owner = ProcessOwnership::acquire(&fixture.0.root).unwrap();
+        fs::write(
+            fixture.0.cleanup_path(&saved.store_id).unwrap(),
+            br#"{"version":1,"store_id":"../../outside"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            fixture.0.cleanup_at_process_start(&owner),
+            Err(SessionError::CorruptedSession)
+        );
+        assert!(fixture.0.store_path(&saved.store_id).unwrap().exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cleanup_rejects_symlinked_store_parent() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        fixture.0.remove_restoration(&saved.store_id).unwrap();
+        let stores = fixture.0.root.join("stores");
+        let target = fixture.0.root.join("outside");
+        fs::rename(&stores, &target).unwrap();
+        std::os::unix::fs::symlink(&target, &stores).unwrap();
+        assert_eq!(restart_cleanup(&fixture), 1);
+        assert!(target.join(&saved.store_id).exists());
+    }
+
+    #[test]
+    fn process_lock_probe() {
+        if let Some(root) = std::env::var_os("MATRIX_LOCK_TEST_ROOT") {
+            assert!(matches!(
+                ProcessOwnership::acquire(Path::new(&root)),
+                Err(SessionError::OperationInProgress)
+            ));
+        }
+    }
+
+    #[test]
+    fn process_lock_excludes_another_native_process_and_releases_on_drop() {
+        let fixture = Fixture::new();
+        let owner = ProcessOwnership::acquire(&fixture.0.root).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["session_store::tests::process_lock_probe", "--exact"])
+            .env("MATRIX_LOCK_TEST_ROOT", &fixture.0.root)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "lock probe failed");
+        drop(owner);
+        assert!(ProcessOwnership::acquire(&fixture.0.root).is_ok());
+    }
+
+    #[test]
+    fn cleanup_runs_once_and_never_deletes_a_store_used_in_this_process() {
+        let fixture = Fixture::new();
+        let process_lock = Mutex::new(None);
+        initialize_lifecycle(&process_lock, &fixture.0).unwrap();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        fixture.0.remove_restoration(&saved.store_id).unwrap();
+        initialize_lifecycle(&process_lock, &fixture.0).unwrap();
+        assert!(fixture.0.store_path(&saved.store_id).unwrap().exists());
+        assert!(fixture.0.cleanup_path(&saved.store_id).unwrap().exists());
+        drop(process_lock);
+        assert_eq!(restart_cleanup(&fixture), 0);
+    }
+
+    #[test]
+    fn record_write_failure_cannot_revoke_credentials_or_publish_logout() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        fs::create_dir(fixture.0.cleanup_path(&saved.store_id).unwrap()).unwrap();
+        assert_eq!(
+            fixture.0.remove_restoration(&saved.store_id),
+            Err(SessionError::Persistence)
+        );
+        assert!(fixture.0.load().unwrap().unwrap().store_id == saved.store_id);
+        assert!(fixture.0.secrets.read(&saved.store_id).unwrap().is_some());
+    }
+
+    #[test]
+    fn credentials_protect_unreferenced_store_and_wrong_root_lock_is_rejected() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        fixture.0.record_cleanup(&saved.store_id).unwrap();
+        fs::remove_file(fixture.0.root.join("active-session.json")).unwrap();
+        assert_eq!(restart_cleanup(&fixture), 1);
+        assert!(fixture.0.store_path(&saved.store_id).unwrap().exists());
+        let other = Fixture::new();
+        let owner = ProcessOwnership::acquire(&other.0.root).unwrap();
+        assert_eq!(
+            fixture.0.cleanup_at_process_start(&owner),
+            Err(SessionError::Persistence)
+        );
     }
 
     #[tokio::test]

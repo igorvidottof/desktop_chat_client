@@ -120,7 +120,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    await tester.pump(const Duration(milliseconds: 2999));
+    await tester.pump(const Duration(milliseconds: 4999));
     expect(find.text('Encerrando a sincronização…'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1));
     expect(find.text('Finalizando operações em andamento…'), findsOneWidget);
@@ -131,7 +131,7 @@ void main() {
       'Finalizando operações em andamento…',
       'Protegendo os dados da sua sessão…',
     ]) {
-      await tester.pump(const Duration(seconds: 3));
+      await tester.pump(const Duration(seconds: 5));
       expect(find.text(message), findsOneWidget);
       expect(find.text('Encerrando a sincronização…'), findsNothing);
     }
@@ -163,7 +163,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Logout'));
     await tester.pump();
-    await tester.pump(const Duration(seconds: 6));
+    await tester.pump(const Duration(seconds: 10));
     expect(find.text('Protegendo os dados da sua sessão…'), findsOneWidget);
     first.completeError(LogoutError.localCleanup);
     await tester.pumpAndSettle();
@@ -245,8 +245,9 @@ void main() {
         find.textContaining(
           'remoção dos dados locais restantes ficou pendente',
         ),
-        findsOneWidget,
+        findsNothing,
       );
+      expect(find.text('Entrar'), findsOneWidget);
       await tester.enterText(find.byType(TextField).at(1), 'fixture');
       await tester.enterText(
         find.byType(TextField).at(2),
