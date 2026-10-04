@@ -28,6 +28,7 @@ class MatrixBridgeService {
     this.probe = probeNative,
     this.login = loginNative,
     this.rooms = native.listConversations,
+    this.markRoomRead = native.markConversationRead,
     this.history = native.loadMessageHistory,
     this.send = native.sendTextMessage,
     this.openUpdates = NativeMatrixUpdateSource.new,
@@ -38,6 +39,7 @@ class MatrixBridgeService {
   final ServerProbe probe;
   final PasswordLogin login;
   final ConversationLoader rooms;
+  final Future<void> Function({required String conversationId}) markRoomRead;
   final MessageHistoryLoader history;
   final TextMessageSender send;
   final MatrixUpdateSourceFactory openUpdates;

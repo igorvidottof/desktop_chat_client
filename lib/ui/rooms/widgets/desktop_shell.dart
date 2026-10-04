@@ -5,6 +5,7 @@ import '../../auth/view_models/auth_view_model.dart';
 import '../../../domain/models/models.dart';
 import '../../core/themes/layout_tokens.dart';
 import '../../core/ui/state_panel.dart';
+import '../../core/ui/initial_avatar.dart';
 import '../../auth/widgets/failure_messages.dart';
 import 'rooms_view.dart';
 
@@ -39,14 +40,36 @@ class DesktopShell extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.all(LayoutTokens.padding),
-                      child: Text(
-                        'Conversas',
-                        style: Theme.of(context).textTheme.titleLarge,
+                    SizedBox(
+                      height: 80,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.forum_outlined,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Desktop Chat',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     const Divider(),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+                      child: Text(
+                        'Conversas',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                     Expanded(child: RoomsView(viewModel: rooms)),
                     const Divider(),
                     Padding(
@@ -54,22 +77,48 @@ class DesktopShell extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Conta autenticada'),
-                          if (account != null) ...[
-                            Text(
-                              account.userId,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                          if (account != null)
+                            Row(
+                              children: [
+                                InitialAvatar(
+                                  name: account.userId.replaceFirst('@', ''),
+                                  radius: 18,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Tooltip(
+                                    message:
+                                        'Dispositivo: ${account.deviceId}\n${account.homeserverAddress}',
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          account.userId,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style:
+                                              Theme.of(
+                                                context,
+                                              ).textTheme.bodyMedium,
+                                        ),
+                                        Text(
+                                          'Conta autenticada',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodySmall?.copyWith(
+                                            color:
+                                                Theme.of(
+                                                  context,
+                                                ).colorScheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            Tooltip(
-                              message:
-                                  'Dispositivo: ${account.deviceId}\n${account.homeserverAddress}',
-                              child: const Text(
-                                'Sessão Matrix',
-                                style: TextStyle(fontSize: 12),
-                              ),
-                            ),
-                          ],
                           if (error != null)
                             Semantics(
                               liveRegion: true,
@@ -96,35 +145,42 @@ class DesktopShell extends StatelessWidget {
                       )
                       : Column(
                         children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: LayoutTokens.gap,
-                              vertical: LayoutTokens.compact,
-                            ),
-                            child: Row(
-                              children: [
-                                if (narrow)
-                                  IconButton(
-                                    tooltip: 'Voltar às conversas',
-                                    onPressed: () => rooms.selectRoom(null),
-                                    icon: const Icon(Icons.arrow_back),
+                          SizedBox(
+                            height: 80,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                              ),
+                              child: Row(
+                                children: [
+                                  if (narrow)
+                                    IconButton(
+                                      tooltip: 'Voltar às conversas',
+                                      onPressed: () => rooms.selectRoom(null),
+                                      icon: const Icon(Icons.arrow_back),
+                                    ),
+                                  InitialAvatar(name: selected.displayName),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      selected.displayName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                                   ),
-                                Expanded(
-                                  child: Text(
-                                    selected.displayName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style:
-                                        Theme.of(context).textTheme.titleLarge,
-                                  ),
-                                ),
-                                if (narrow)
-                                  IconButton(
-                                    tooltip: 'Logout',
-                                    onPressed: auth.logout,
-                                    icon: const Icon(Icons.logout),
-                                  ),
-                              ],
+                                  if (narrow)
+                                    IconButton(
+                                      tooltip: 'Logout',
+                                      onPressed: auth.logout,
+                                      icon: const Icon(Icons.logout),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                           if (narrow && error != null)

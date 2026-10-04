@@ -8,6 +8,7 @@ import '../../core/themes/layout_tokens.dart';
 import '../../core/ui/state_panel.dart';
 import '../../../data/repositories/chat_repository.dart';
 import 'message_presentation.dart';
+import 'message_row.dart';
 
 class ChatView extends StatefulWidget {
   const ChatView({super.key, required this.viewModel});
@@ -131,14 +132,30 @@ class _ChatViewState extends State<ChatView> {
                               message: 'Nenhuma mensagem ainda.',
                               icon: Icons.chat_bubble_outline,
                             )
-                            : SelectionArea(
-                              child: ListView.builder(
-                                controller: _scroll,
-                                padding: const EdgeInsets.all(LayoutTokens.gap),
-                                itemCount: messages.length,
-                                itemBuilder:
-                                    (context, index) =>
-                                        MessageBubble(message: messages[index]),
+                            : ColoredBox(
+                              color:
+                                  Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerLowest,
+                              child: SelectionArea(
+                                child: ListView.builder(
+                                  controller: _scroll,
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    4,
+                                    24,
+                                    24,
+                                  ),
+                                  itemCount: messages.length,
+                                  itemBuilder:
+                                      (context, index) => MessageRow(
+                                        message: messages[index],
+                                        previous:
+                                            index == 0
+                                                ? null
+                                                : messages[index - 1],
+                                      ),
+                                ),
                               ),
                             ),
                   ),
@@ -188,9 +205,8 @@ class _ChatViewState extends State<ChatView> {
                     child: Text(sendMessageErrorMessage(state.$4!)),
                   ),
                 if (!state.$1 && state.$3 == null) ...[
-                  const Divider(),
                   Padding(
-                    padding: const EdgeInsets.all(LayoutTokens.gap),
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
                     child: ValueListenableBuilder<TextEditingValue>(
                       valueListenable: _composer,
                       builder: (context, value, _) {
@@ -198,8 +214,7 @@ class _ChatViewState extends State<ChatView> {
                             value.text.trim().isNotEmpty &&
                             value.text.runes.length <= maxMessageChars;
                         return Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               child: Focus(
@@ -252,10 +267,31 @@ class _ChatViewState extends State<ChatView> {
                                   maxLines: 4,
                                   textInputAction: TextInputAction.newline,
                                   decoration: InputDecoration(
-                                    labelText: 'Mensagem',
+                                    filled: true,
+                                    fillColor:
+                                        Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerLow,
                                     hintText: 'Escreva uma mensagem…',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    helperStyle: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall?.copyWith(
+                                      color:
+                                          Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                    ),
                                     helperText:
                                         'Enter para enviar · Shift+Enter para nova linha',
+                                    helperMaxLines: 2,
                                     errorText:
                                         value.text.runes.length >
                                                 maxMessageChars
@@ -281,73 +317,6 @@ class _ChatViewState extends State<ChatView> {
           },
         ),
       ],
-    );
-  }
-}
-
-class MessageBubble extends StatelessWidget {
-  const MessageBubble({super.key, required this.message});
-  final MessageSummary message;
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final undecryptable =
-        message.body == 'Não foi possível descriptografar esta mensagem.';
-    return Align(
-      key: ValueKey(message.id),
-      alignment: message.isOwn ? Alignment.centerRight : Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: LayoutTokens.compact),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: LayoutTokens.messageWidth,
-          ),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color:
-                  undecryptable
-                      ? colors.surfaceContainerHigh
-                      : message.isOwn
-                      ? colors.primaryContainer
-                      : colors.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(LayoutTokens.radius),
-              border: Border.all(color: colors.outlineVariant),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(LayoutTokens.gap),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    message.senderId,
-                    style: Theme.of(context).textTheme.labelMedium,
-                  ),
-                  const SizedBox(height: LayoutTokens.compact),
-                  Text(
-                    message.body,
-                    style: TextStyle(
-                      color:
-                          undecryptable
-                              ? colors.onSurfaceVariant
-                              : message.isOwn
-                              ? colors.onPrimaryContainer
-                              : colors.onSurface,
-                      fontStyle:
-                          undecryptable ? FontStyle.italic : FontStyle.normal,
-                    ),
-                  ),
-                  const SizedBox(height: LayoutTokens.compact),
-                  Text(
-                    messageTimestamp(message.timestampMs),
-                    style: Theme.of(context).textTheme.labelSmall,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

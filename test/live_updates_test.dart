@@ -107,7 +107,7 @@ void main() {
     source.controller.add(update(message: null));
     await tester.pump();
     expect(find.text('later'), findsOneWidget);
-    expect(find.text('other'), findsNothing);
+    expect(find.byKey(const ValueKey('other')), findsNothing);
     expect(
       tester.getTopLeft(find.text('initial')).dy,
       lessThan(tester.getTopLeft(find.text('middle')).dy),

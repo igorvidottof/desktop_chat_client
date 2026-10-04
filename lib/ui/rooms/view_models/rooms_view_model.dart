@@ -23,12 +23,18 @@ class RoomsViewModel extends GetxController {
   bool _inFlight = false;
   bool _pending = false;
   ConversationError? _syncFailure;
+  List<ConversationSummary> _nativeRooms = const [];
+  final _readCounts = <String, int>{};
+  final _reading = <String>{};
   @override
   void onInit() {
     super.onInit();
     _generation++;
     _subscription = repository.updates.listen((event) {
       if (!_active) return;
+      if (event.kind == MatrixUpdateKind.message) {
+        _readCounts.remove(event.conversationId);
+      }
       if (repository.initialRoomSyncPending) {
         _syncFailure = switch (event.status) {
           MatrixSyncStatus.reconnecting => ConversationError.network,
@@ -60,8 +66,59 @@ class RoomsViewModel extends GetxController {
     super.onClose();
   }
 
-  void selectRoom(ConversationSummary? room) =>
-      state = state.copyWith(selected: room);
+  void selectRoom(ConversationSummary? room) {
+    if (!_active) return;
+    state = state.copyWith(selected: room);
+    if (room == null || _reading.contains(room.id)) return;
+    final current = state.rooms.where((r) => r.id == room.id).firstOrNull;
+    if (current == null || current.unreadMessageCount == 0) return;
+    _readCounts[room.id] = current.unreadMessageCount;
+    _reading.add(room.id);
+    state = state.copyWith(error: null);
+    _projectRooms();
+    unawaited(_markRead(room.id));
+  }
+
+  Future<void> _markRead(String roomId) async {
+    final generation = _generation;
+    try {
+      await repository.markRead(roomId);
+    } catch (error) {
+      if (!_active || generation != _generation) return;
+      _readCounts.remove(roomId);
+      _projectRooms();
+      state = state.copyWith(
+        error: error is ConversationError ? error : ConversationError.internal,
+      );
+    } finally {
+      _reading.remove(roomId);
+    }
+  }
+
+  void _projectRooms() {
+    // Oculta o contador otimisticamente até o sync confirmar o recibo nativo.
+    // Uma nova mensagem ou contagem maior volta a permitir o badge.
+    final rooms =
+        _nativeRooms.map((room) {
+          final readCount = _readCounts[room.id];
+          if (readCount == null) return room;
+          if (room.unreadMessageCount == 0 ||
+              room.unreadMessageCount > readCount) {
+            _readCounts.remove(room.id);
+            return room;
+          }
+          return ConversationSummary(
+            id: room.id,
+            displayName: room.displayName,
+          );
+        }).toList();
+    _readCounts.removeWhere((id, _) => !rooms.any((room) => room.id == id));
+    state = state.copyWith(
+      rooms: rooms,
+      selected: rooms.where((r) => r.id == state.selected?.id).firstOrNull,
+    );
+  }
+
   Future<void> load({bool background = false}) async {
     if (!_active || _inFlight) return;
     _inFlight = true;
@@ -74,14 +131,8 @@ class RoomsViewModel extends GetxController {
     try {
       final rooms = await repository.load();
       if (!_active || generation != _generation) return;
-      final selected = state.selected;
-      state = state.copyWith(
-        rooms: List.unmodifiable(rooms),
-        selected:
-            selected == null
-                ? null
-                : rooms.where((r) => r.id == selected.id).firstOrNull,
-      );
+      _nativeRooms = List.unmodifiable(rooms);
+      _projectRooms();
     } on ConversationError catch (error) {
       if (_active && generation == _generation) {
         state = state.copyWith(error: error);

@@ -60,7 +60,7 @@ void main() {
     const Size(380, 620),
   ]) {
     testWidgets(
-      'Shell redimensionável ${size.width}: seleção, bolhas e volta',
+      'Shell redimensionável ${size.width}: seleção, mensagens e volta',
       (tester) async {
         tester.view.physicalSize = size;
         tester.view.devicePixelRatio = 1;
@@ -105,7 +105,7 @@ void main() {
         );
         expect(
           tester.widget<Align>(find.byKey(const ValueKey('own'))).alignment,
-          Alignment.centerRight,
+          Alignment.centerLeft,
         );
         final placeholder = tester.widget<Text>(
           find.text('Não foi possível descriptografar esta mensagem.'),

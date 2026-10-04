@@ -81,6 +81,11 @@ pub async fn list_conversations() -> Result<Vec<ConversationSummary>, Conversati
     crate::conversations::list().await
 }
 
+/// Marca a sala como lida com recibo privado, sem divulgar a leitura a outros usuários.
+pub async fn mark_conversation_read(conversation_id: String) -> Result<(), ConversationError> {
+    crate::conversations::mark_read(&conversation_id).await
+}
+
 /// Estado seguro: nenhum token, DTO do SDK ou chave pode atravessar FRB.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionState {

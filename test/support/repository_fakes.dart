@@ -71,6 +71,14 @@ class FakeAuthRepository implements AuthRepository {
 }
 
 class FakeRoomRepository implements RoomRepository {
+  final readRooms = <String>[];
+  Future<void> Function(String) markReadAction = (_) async {};
+  @override
+  Future<void> markRead(String roomId) {
+    readRooms.add(roomId);
+    return markReadAction(roomId);
+  }
+
   @override
   bool initialRoomSyncPending = false;
   final events = StreamController<MatrixUpdate>.broadcast(sync: true);

@@ -15,6 +15,38 @@ const account = native.AccountSummary(
   homeserverAddress: 'https://example.invalid',
 );
 void main() {
+  test('Rooms encaminha leitura e normaliza falhas nativas', () async {
+    String? readRoom;
+    final repository = MatrixRoomRepository(
+      MatrixBridgeService(
+        markRoomRead: ({required conversationId}) async {
+          readRoom = conversationId;
+        },
+      ),
+      EmptyMatrixUpdateSource(),
+    );
+    await repository.markRead('opaque');
+    expect(readRoom, 'opaque');
+    for (final error in [
+      ...native.ConversationError.values,
+      StateError('private'),
+    ]) {
+      final failing = MatrixRoomRepository(
+        MatrixBridgeService(
+          markRoomRead: ({required conversationId}) async => throw error,
+        ),
+        EmptyMatrixUpdateSource(),
+      );
+      await expectLater(
+        failing.markRead('opaque'),
+        throwsA(
+          error is native.ConversationError
+              ? domain.ConversationError.values.byName(error.name)
+              : domain.ConversationError.internal,
+        ),
+      );
+    }
+  });
   test('Auth mapeia resumos e mantém somente a projeção da sessão', () async {
     final repository = MatrixAuthRepository(
       MatrixBridgeService(

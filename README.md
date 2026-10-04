@@ -47,14 +47,16 @@ flutter_rust_bridge_codegen generate
 ```
 
 Native changes should be checked from `rust/` with `cargo fmt --check`,
-`cargo clippy -- -D warnings`, and `cargo test`. The architecture/UI checkpoint
-makes no native API changes and requires no regeneration.
+`cargo clippy -- -D warnings`, and `cargo test`.
 
 ## Desktop behavior and limits
 
 At widths of 800 logical pixels and above, the 304-pixel conversation sidebar
 stays visible beside the selected conversation. Below 800 pixels, the same room
-selection drives a single pane with a back action. Message bodies are selectable;
+selection drives a single pane with a back action. Message bodies are selectable.
+Opening an unread room clears its badge immediately and sends a private Matrix
+read receipt and fully-read marker. Failed read requests restore the badge;
+subsequent sync updates confirm the count, and new messages can show it again.
 Enter sends and Shift+Enter adds a newline. Input is cleared only after server
 acceptance. The immediate input affordance preserves the native limit of 10,000
 Unicode scalar values; Rust remains authoritative for validation.

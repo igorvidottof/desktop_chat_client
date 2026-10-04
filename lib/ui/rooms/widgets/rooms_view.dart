@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import '../view_models/rooms_view_model.dart';
 import '../../core/themes/layout_tokens.dart';
 import '../../core/ui/state_panel.dart';
+import '../../core/ui/initial_avatar.dart';
 import 'failure_messages.dart';
 
 class RoomsView extends StatelessWidget {
@@ -57,14 +58,22 @@ class RoomsView extends StatelessWidget {
               itemBuilder: (context, index) {
                 final room = state.rooms[index];
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: LayoutTokens.compact),
+                  padding: const EdgeInsets.only(bottom: 4),
                   child: ListTile(
                     key: ValueKey(room.id),
                     selected: room.id == state.selected?.id,
+                    leading: InitialAvatar(name: room.displayName),
                     title: Text(
                       room.displayName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight:
+                            room.id == state.selected?.id
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                      ),
                     ),
                     trailing:
                         room.unreadMessageCount > 0

@@ -27,6 +27,12 @@ Future<AccountSummary> login({
 Future<List<ConversationSummary>> listConversations() =>
     RustLib.instance.api.crateApiSimpleListConversations();
 
+/// Marca a sala como lida com recibo privado, sem divulgar a leitura a outros usuários.
+Future<void> markConversationRead({required String conversationId}) => RustLib
+    .instance
+    .api
+    .crateApiSimpleMarkConversationRead(conversationId: conversationId);
+
 /// Consulta primeiro a autoridade em memória, inclusive após hot restart do Dart.
 Future<SessionState> initializeSession() =>
     RustLib.instance.api.crateApiSimpleInitializeSession();

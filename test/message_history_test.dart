@@ -74,12 +74,16 @@ void main() {
       ]);
       await tester.pumpAndSettle();
       expect(find.text("<script>alert('test')</script>"), findsOneWidget);
-      expect(find.text('@other:example.org'), findsOneWidget);
-      expect(find.text('@me:example.org'), findsOneWidget);
+      expect(find.byTooltip('@other:example.org'), findsOneWidget);
+      expect(find.byTooltip('@me:example.org'), findsOneWidget);
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('old')),
-          matching: find.text(messageTimestamp(1000)),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Semantics &&
+                widget.properties.label == messageTimestamp(1000),
+          ),
         ),
         findsOneWidget,
       );
@@ -93,7 +97,7 @@ void main() {
       );
       expect(
         tester.widget<Align>(find.byKey(const ValueKey('new'))).alignment,
-        Alignment.centerRight,
+        Alignment.centerLeft,
       );
       await tester.tap(find.byTooltip('Voltar às conversas'));
       await tester.pumpAndSettle();
