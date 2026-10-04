@@ -1,9 +1,5 @@
-use std::time::Duration;
-
-use matrix_sdk::{config::SyncSettings, ruma::api::error::ErrorKind, HttpError};
-
 use crate::{
-    api::simple::{ConversationError, ConversationSummary, LoginError},
+    api::simple::{ConversationError, ConversationSummary},
     auth,
 };
 
@@ -12,10 +8,6 @@ pub(crate) async fn list() -> Result<Vec<ConversationSummary>, ConversationError
     let _operation = auth::CLIENT_OPERATIONS.read().await;
     let client = auth::authenticated_client()?;
     let result = async {
-        client
-            .sync_once(conversation_sync_settings())
-            .await
-            .map_err(map_sdk_error)?;
         let mut summaries = Vec::new();
         for room in client.joined_rooms() {
             // O SDK identifica espaços pelo estado de criação já recebido no sync.
@@ -36,13 +28,6 @@ pub(crate) async fn list() -> Result<Vec<ConversationSummary>, ConversationError
     result
 }
 
-fn conversation_sync_settings() -> SyncSettings {
-    // Esta atualização finita da UI não é o futuro loop de sync contínuo.
-    // O SDK ainda reutiliza seu token persistido; timeout zero evita que esta
-    // requisição única faça long polling intencional à espera de eventos futuros.
-    SyncSettings::default().timeout(Duration::ZERO)
-}
-
 fn summary(id: String, name: Option<String>) -> ConversationSummary {
     let display_name = name
         .filter(|name| !name.trim().is_empty())
@@ -50,52 +35,9 @@ fn summary(id: String, name: Option<String>) -> ConversationSummary {
     ConversationSummary { id, display_name }
 }
 
-fn map_sdk_error(error: matrix_sdk::Error) -> ConversationError {
-    match error {
-        matrix_sdk::Error::AuthenticationRequired => ConversationError::NotAuthenticated,
-        matrix_sdk::Error::Http(error) => map_http_error(&error),
-        _ => ConversationError::Internal,
-    }
-}
-
-fn map_http_error(error: &HttpError) -> ConversationError {
-    if let HttpError::Cached(error) = error {
-        return map_http_error(error);
-    }
-    if let Some(ErrorKind::MissingToken | ErrorKind::UnknownToken(_)) =
-        error.client_api_error_kind()
-    {
-        return ConversationError::NotAuthenticated;
-    }
-    // Reutiliza a classificação de transporte existente, sem tratar 403 como senha inválida.
-    match auth::map_http_error_ref(error, false) {
-        LoginError::Network => ConversationError::Network,
-        LoginError::Tls => ConversationError::Tls,
-        LoginError::RateLimited => ConversationError::RateLimited,
-        LoginError::UnusableHomeserver => ConversationError::Synchronization,
-        _ => ConversationError::Internal,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use matrix_sdk::ruma::api::{
-        client::uiaa::UiaaResponse,
-        error::{
-            ErrorBody, FromHttpResponseError, LimitExceededErrorData, StandardErrorBody,
-            UnknownTokenErrorData,
-        },
-    };
-
-    #[test]
-    fn finite_refresh_does_not_long_poll_or_request_full_state() {
-        // O SDK 0.19.1 não expõe getters; Debug mostra estas opções sem o token.
-        let settings = format!("{:?}", conversation_sync_settings());
-        assert!(settings.contains("timeout: 0ns"), "{settings}");
-        assert!(settings.contains("full_state: false"), "{settings}");
-    }
-
     #[test]
     fn maps_metadata_without_parsing_identifier_or_remote_markup() {
         let room = summary(
@@ -107,46 +49,6 @@ mod tests {
         for name in [None, Some(String::new()), Some(" \n\t".into())] {
             assert_eq!(summary("opaque".into(), name).display_name, "Sala sem nome");
         }
-    }
-
-    fn api_error(kind: ErrorKind) -> HttpError {
-        let body = ErrorBody::Standard(StandardErrorBody::new(
-            kind,
-            "untrusted server detail".into(),
-        ));
-        HttpError::Api(Box::new(FromHttpResponseError::Server(
-            UiaaResponse::MatrixError(
-                body.into_error(matrix_sdk::reqwest::StatusCode::BAD_REQUEST),
-            ),
-        )))
-    }
-
-    #[test]
-    fn maps_safe_sync_categories_including_cached_errors() {
-        for (kind, expected) in [
-            (ErrorKind::MissingToken, ConversationError::NotAuthenticated),
-            (
-                ErrorKind::UnknownToken(UnknownTokenErrorData::new()),
-                ConversationError::NotAuthenticated,
-            ),
-            (
-                ErrorKind::LimitExceeded(LimitExceededErrorData::new()),
-                ConversationError::RateLimited,
-            ),
-            (ErrorKind::Forbidden, ConversationError::Synchronization),
-            (ErrorKind::Unknown, ConversationError::Synchronization),
-        ] {
-            let error = api_error(kind);
-            assert_eq!(map_http_error(&error), expected);
-            assert_eq!(
-                map_http_error(&HttpError::Cached(std::sync::Arc::new(error))),
-                expected
-            );
-        }
-        assert_eq!(
-            map_sdk_error(matrix_sdk::Error::AuthenticationRequired),
-            ConversationError::NotAuthenticated
-        );
     }
 
     #[test]

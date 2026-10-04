@@ -12,7 +12,7 @@ use crate::{
 };
 
 // O contêiner privado possui o único cliente ativo. Nenhum handle atravessa FRB.
-// Login e restauração convergem aqui; somente a operação de salas solicita sync único.
+// Login e restauração convergem aqui; cada cliente possui um único proprietário de sync.
 static AUTH: LazyLock<AuthState<AuthenticatedClient>> = LazyLock::new(AuthState::default);
 
 // Cada operação de salas ou histórico mantém uma leitura até liberar todos os handles do SDK.
@@ -22,6 +22,7 @@ pub(crate) static CLIENT_OPERATIONS: tokio::sync::RwLock<()> = tokio::sync::RwLo
 pub(crate) struct AuthenticatedClient {
     client: Client,
     store_id: String,
+    pub(crate) sync: crate::synchronization::SyncOwner,
 }
 
 impl std::ops::Deref for AuthenticatedClient {
@@ -187,6 +188,15 @@ pub(crate) async fn logout() -> Result<LogoutResult, LogoutError> {
 
 async fn logout_reserved() -> Result<LogoutResult, LogoutError> {
     let attempt = AUTH.begin_logout()?;
+    // Revogar AUTH primeiro, parar entrega e aguardar sync antes de fechar SQLite.
+    attempt
+        .client
+        .as_ref()
+        .ok_or(LogoutError::Internal)?
+        .sync
+        .stop()
+        .await
+        .map_err(|_| LogoutError::Internal)?;
     let _exclusive = CLIENT_OPERATIONS.write().await;
     let id = attempt
         .client
@@ -347,50 +357,61 @@ async fn login_reserved(
     username: String,
     password: String,
 ) -> Result<AccountSummary, LoginError> {
-    AUTH.authenticate(|| async move {
-        let (store_id, passphrase, path) =
-            session_store::blocking(|| SessionStore::platform()?.prepare())
+    let summary = AUTH
+        .authenticate(|| async move {
+            let (store_id, passphrase, path) =
+                session_store::blocking(|| SessionStore::platform()?.prepare())
+                    .await
+                    .map_err(map_persistence_error)?;
+            let client = matrix::client_builder(url)
+                .map_err(map_probe_error)?
+                .sqlite_store(path, Some(&passphrase))
+                .build()
+                .await
+                .map_err(|_| LoginError::Persistence)?;
+            let response = client
+                .matrix_auth()
+                .get_login_types()
+                .await
+                .map_err(map_capability_error)?;
+            require_password_support(&response.flows)?;
+
+            // A API 0.19.1 copia a senha para o builder e internamente para a requisição.
+            // Liberamos nossa String antes do await; isso não garante zeragem da memória.
+            // O SDK aplica short_retry no login; o transporte HTTPS/TLS continua o mesmo.
+            let builder = client
+                .matrix_auth()
+                .login_username(username.trim(), &password);
+            drop(password);
+            // Não retemos nem exportamos a resposta que contém tokens. O SDK instala
+            // a sessão no cliente candidato; ele só vira ativo após toda a operação.
+            builder.send().await.map_err(map_sdk_error)?;
+            let summary = account_summary(&client).map_err(|_| LoginError::Internal)?;
+            let session = client.matrix_auth().session().ok_or(LoginError::Internal)?;
+            let saved = SavedSession::new(
+                client.homeserver().to_string(),
+                store_id.clone(),
+                passphrase.to_string(),
+                session,
+            );
+            // Só publicamos após confirmar persistência. Falha descarta o candidato;
+            // uma gravação de resultado incerto pode ser recuperada por initialize.
+            session_store::blocking(move || SessionStore::platform()?.persist(&saved))
                 .await
                 .map_err(map_persistence_error)?;
-        let client = matrix::client_builder(url)
-            .map_err(map_probe_error)?
-            .sqlite_store(path, Some(&passphrase))
-            .build()
-            .await
-            .map_err(|_| LoginError::Persistence)?;
-        let response = client
-            .matrix_auth()
-            .get_login_types()
-            .await
-            .map_err(map_capability_error)?;
-        require_password_support(&response.flows)?;
-
-        // A API 0.19.1 copia a senha para o builder e internamente para a requisição.
-        // Liberamos nossa String antes do await; isso não garante zeragem da memória.
-        // O SDK aplica short_retry no login; o transporte HTTPS/TLS continua o mesmo.
-        let builder = client
-            .matrix_auth()
-            .login_username(username.trim(), &password);
-        drop(password);
-        // Não retemos nem exportamos a resposta que contém tokens. O SDK instala
-        // a sessão no cliente candidato; ele só vira ativo após toda a operação.
-        builder.send().await.map_err(map_sdk_error)?;
-        let summary = account_summary(&client).map_err(|_| LoginError::Internal)?;
-        let session = client.matrix_auth().session().ok_or(LoginError::Internal)?;
-        let saved = SavedSession::new(
-            client.homeserver().to_string(),
-            store_id.clone(),
-            passphrase.to_string(),
-            session,
-        );
-        // Só publicamos após confirmar persistência. Falha descarta o candidato;
-        // uma gravação de resultado incerto pode ser recuperada por initialize.
-        session_store::blocking(move || SessionStore::platform()?.persist(&saved))
-            .await
-            .map_err(map_persistence_error)?;
-        Ok((AuthenticatedClient { client, store_id }, summary))
-    })
-    .await
+            Ok((
+                AuthenticatedClient {
+                    client,
+                    store_id,
+                    sync: crate::synchronization::SyncOwner::new(),
+                },
+                summary,
+            ))
+        })
+        .await?;
+    let client = authenticated_client().map_err(|_| LoginError::Internal)?;
+    client.sync.start(&client);
+    Ok(summary)
 }
 
 fn account_summary(client: &Client) -> Result<AccountSummary, SessionError> {
@@ -406,7 +427,7 @@ fn account_summary(client: &Client) -> Result<AccountSummary, SessionError> {
 
 pub(crate) async fn initialize() -> Result<SessionState, SessionError> {
     // Restauração segue a mesma regra de cancelamento do login; não há tarefas
-    // permanentes nem sync contínuo, apenas a operação finita protegida por AUTH.
+    // duplicadas: initialize reconecta ao proprietário nativo já existente.
     tokio::spawn(initialize_reserved())
         .await
         .map_err(|_| SessionError::Internal)?
@@ -464,9 +485,13 @@ async fn initialize_reserved() -> Result<SessionState, SessionError> {
             Ok(Some(AuthenticatedClient {
                 client,
                 store_id: id,
+                sync: crate::synchronization::SyncOwner::new(),
             }))
         })
         .await?;
+    if let Some(client) = &client {
+        client.sync.start(client);
+    }
     Ok(SessionState {
         account: client
             .as_deref()

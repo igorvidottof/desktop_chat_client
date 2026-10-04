@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -406784642;
+  int get rustContentHash => 1181810732;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -76,6 +76,15 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  Future<void> crateApiSimpleAcknowledgeMatrixUpdate({
+    required String subscriptionId,
+    required int sequence,
+  });
+
+  Future<void> crateApiSimpleCloseMatrixUpdates({
+    required String subscriptionId,
+  });
+
   Future<SessionState> crateApiSimpleInitializeSession();
 
   Future<List<ConversationSummary>> crateApiSimpleListConversations();
@@ -91,6 +100,12 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<LogoutResult> crateApiSimpleLogout();
+
+  Stream<MatrixUpdate> crateApiSimpleMatrixUpdates({
+    required String subscriptionId,
+  });
+
+  Future<String> crateApiSimpleOpenMatrixUpdates();
 
   Future<ServerInfo> crateApiSimpleProbeServer({required String address});
 
@@ -109,6 +124,74 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  Future<void> crateApiSimpleAcknowledgeMatrixUpdate({
+    required String subscriptionId,
+    required int sequence,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(subscriptionId, serializer);
+          sse_encode_u_32(sequence, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 1,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSimpleAcknowledgeMatrixUpdateConstMeta,
+        argValues: [subscriptionId, sequence],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSimpleAcknowledgeMatrixUpdateConstMeta =>
+      const TaskConstMeta(
+        debugName: "acknowledge_matrix_update",
+        argNames: ["subscriptionId", "sequence"],
+      );
+
+  @override
+  Future<void> crateApiSimpleCloseMatrixUpdates({
+    required String subscriptionId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(subscriptionId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiSimpleCloseMatrixUpdatesConstMeta,
+        argValues: [subscriptionId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSimpleCloseMatrixUpdatesConstMeta =>
+      const TaskConstMeta(
+        debugName: "close_matrix_updates",
+        argNames: ["subscriptionId"],
+      );
+
+  @override
   Future<SessionState> crateApiSimpleInitializeSession() {
     return handler.executeNormal(
       NormalTask(
@@ -117,7 +200,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 1,
+            funcId: 3,
             port: port_,
           );
         },
@@ -144,7 +227,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 4,
             port: port_,
           );
         },
@@ -174,7 +257,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 5,
             port: port_,
           );
         },
@@ -211,7 +294,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 6,
             port: port_,
           );
         },
@@ -240,7 +323,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 7,
             port: port_,
           );
         },
@@ -259,6 +342,71 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "logout", argNames: []);
 
   @override
+  Stream<MatrixUpdate> crateApiSimpleMatrixUpdates({
+    required String subscriptionId,
+  }) {
+    final sink = RustStreamSink<MatrixUpdate>();
+    unawaited(
+      handler.executeNormal(
+        NormalTask(
+          callFfi: (port_) {
+            final serializer = SseSerializer(generalizedFrbRustBinding);
+            sse_encode_String(subscriptionId, serializer);
+            sse_encode_StreamSink_matrix_update_Sse(sink, serializer);
+            pdeCallFfi(
+              generalizedFrbRustBinding,
+              serializer,
+              funcId: 8,
+              port: port_,
+            );
+          },
+          codec: SseCodec(
+            decodeSuccessData: sse_decode_unit,
+            decodeErrorData: sse_decode_matrix_stream_error,
+          ),
+          constMeta: kCrateApiSimpleMatrixUpdatesConstMeta,
+          argValues: [subscriptionId, sink],
+          apiImpl: this,
+        ),
+      ),
+    );
+    return sink.stream;
+  }
+
+  TaskConstMeta get kCrateApiSimpleMatrixUpdatesConstMeta =>
+      const TaskConstMeta(
+        debugName: "matrix_updates",
+        argNames: ["subscriptionId", "sink"],
+      );
+
+  @override
+  Future<String> crateApiSimpleOpenMatrixUpdates() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 9,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_matrix_stream_error,
+        ),
+        constMeta: kCrateApiSimpleOpenMatrixUpdatesConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSimpleOpenMatrixUpdatesConstMeta =>
+      const TaskConstMeta(debugName: "open_matrix_updates", argNames: []);
+
+  @override
   Future<ServerInfo> crateApiSimpleProbeServer({required String address}) {
     return handler.executeNormal(
       NormalTask(
@@ -268,7 +416,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 10,
             port: port_,
           );
         },
@@ -300,7 +448,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 11,
             port: port_,
           );
         },
@@ -320,6 +468,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         debugName: "send_text_message",
         argNames: ["conversationId", "body"],
       );
+
+  @protected
+  AnyhowException dco_decode_AnyhowException(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return AnyhowException(raw as String);
+  }
+
+  @protected
+  RustStreamSink<MatrixUpdate> dco_decode_StreamSink_matrix_update_Sse(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    throw UnimplementedError();
+  }
 
   @protected
   String dco_decode_String(dynamic raw) {
@@ -350,6 +512,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   AccountSummary dco_decode_box_autoadd_account_summary(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return dco_decode_account_summary(raw);
+  }
+
+  @protected
+  MessageSummary dco_decode_box_autoadd_message_summary(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_message_summary(raw);
   }
 
   @protected
@@ -425,6 +593,40 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MatrixStreamError dco_decode_matrix_stream_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return MatrixStreamError.values[raw as int];
+  }
+
+  @protected
+  MatrixSyncStatus dco_decode_matrix_sync_status(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return MatrixSyncStatus.values[raw as int];
+  }
+
+  @protected
+  MatrixUpdate dco_decode_matrix_update(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return MatrixUpdate(
+      subscriptionId: dco_decode_String(arr[0]),
+      sequence: dco_decode_u_32(arr[1]),
+      kind: dco_decode_matrix_update_kind(arr[2]),
+      conversationId: dco_decode_opt_String(arr[3]),
+      message: dco_decode_opt_box_autoadd_message_summary(arr[4]),
+      status: dco_decode_matrix_sync_status(arr[5]),
+    );
+  }
+
+  @protected
+  MatrixUpdateKind dco_decode_matrix_update_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return MatrixUpdateKind.values[raw as int];
+  }
+
+  @protected
   MessageHistoryError dco_decode_message_history_error(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return MessageHistoryError.values[raw as int];
@@ -446,9 +648,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  String? dco_decode_opt_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
   AccountSummary? dco_decode_opt_box_autoadd_account_summary(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_account_summary(raw);
+  }
+
+  @protected
+  MessageSummary? dco_decode_opt_box_autoadd_message_summary(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_message_summary(raw);
   }
 
   @protected
@@ -508,9 +722,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int dco_decode_u_32(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as int;
+  }
+
+  @protected
   int dco_decode_u_8(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
+  }
+
+  @protected
+  void dco_decode_unit(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return;
+  }
+
+  @protected
+  AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_String(deserializer);
+    return AnyhowException(inner);
+  }
+
+  @protected
+  RustStreamSink<MatrixUpdate> sse_decode_StreamSink_matrix_update_Sse(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    throw UnimplementedError('Unreachable ()');
   }
 
   @protected
@@ -545,6 +786,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_account_summary(deserializer));
+  }
+
+  @protected
+  MessageSummary sse_decode_box_autoadd_message_summary(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_message_summary(deserializer));
   }
 
   @protected
@@ -639,6 +888,48 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  MatrixStreamError sse_decode_matrix_stream_error(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return MatrixStreamError.values[inner];
+  }
+
+  @protected
+  MatrixSyncStatus sse_decode_matrix_sync_status(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return MatrixSyncStatus.values[inner];
+  }
+
+  @protected
+  MatrixUpdate sse_decode_matrix_update(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_subscriptionId = sse_decode_String(deserializer);
+    var var_sequence = sse_decode_u_32(deserializer);
+    var var_kind = sse_decode_matrix_update_kind(deserializer);
+    var var_conversationId = sse_decode_opt_String(deserializer);
+    var var_message = sse_decode_opt_box_autoadd_message_summary(deserializer);
+    var var_status = sse_decode_matrix_sync_status(deserializer);
+    return MatrixUpdate(
+      subscriptionId: var_subscriptionId,
+      sequence: var_sequence,
+      kind: var_kind,
+      conversationId: var_conversationId,
+      message: var_message,
+      status: var_status,
+    );
+  }
+
+  @protected
+  MatrixUpdateKind sse_decode_matrix_update_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return MatrixUpdateKind.values[inner];
+  }
+
+  @protected
   MessageHistoryError sse_decode_message_history_error(
     SseDeserializer deserializer,
   ) {
@@ -665,6 +956,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_String(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   AccountSummary? sse_decode_opt_box_autoadd_account_summary(
     SseDeserializer deserializer,
   ) {
@@ -672,6 +974,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_account_summary(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  MessageSummary? sse_decode_opt_box_autoadd_message_summary(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_message_summary(deserializer));
     } else {
       return null;
     }
@@ -735,9 +1050,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  int sse_decode_u_32(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getUint32();
+  }
+
+  @protected
   int sse_decode_u_8(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint8();
+  }
+
+  @protected
+  void sse_decode_unit(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+  }
+
+  @protected
+  void sse_encode_AnyhowException(
+    AnyhowException self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.message, serializer);
+  }
+
+  @protected
+  void sse_encode_StreamSink_matrix_update_Sse(
+    RustStreamSink<MatrixUpdate> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(
+      self.setupAndSerialize(
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_matrix_update,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+      ),
+      serializer,
+    );
   }
 
   @protected
@@ -770,6 +1122,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_account_summary(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_message_summary(
+    MessageSummary self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_message_summary(self, serializer);
   }
 
   @protected
@@ -857,6 +1218,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_matrix_stream_error(
+    MatrixStreamError self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_matrix_sync_status(
+    MatrixSyncStatus self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_matrix_update(MatrixUpdate self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.subscriptionId, serializer);
+    sse_encode_u_32(self.sequence, serializer);
+    sse_encode_matrix_update_kind(self.kind, serializer);
+    sse_encode_opt_String(self.conversationId, serializer);
+    sse_encode_opt_box_autoadd_message_summary(self.message, serializer);
+    sse_encode_matrix_sync_status(self.status, serializer);
+  }
+
+  @protected
+  void sse_encode_matrix_update_kind(
+    MatrixUpdateKind self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_message_history_error(
     MessageHistoryError self,
     SseSerializer serializer,
@@ -879,6 +1278,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_String(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_account_summary(
     AccountSummary? self,
     SseSerializer serializer,
@@ -888,6 +1297,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_account_summary(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_message_summary(
+    MessageSummary? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_message_summary(self, serializer);
     }
   }
 
@@ -944,8 +1366,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_u_32(int self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putUint32(self);
+  }
+
+  @protected
   void sse_encode_u_8(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint8(self);
+  }
+
+  @protected
+  void sse_encode_unit(void self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
   }
 }

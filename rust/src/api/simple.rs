@@ -73,7 +73,7 @@ pub enum ConversationError {
     Internal,
 }
 
-/// Sincroniza uma única vez e retorna somente salas ingressadas que não são espaços.
+/// Lê o retrato do store atualizado pelo único proprietário de sync contínuo.
 pub async fn list_conversations() -> Result<Vec<ConversationSummary>, ConversationError> {
     crate::conversations::list().await
 }
@@ -199,4 +199,62 @@ pub async fn send_text_message(
     body: String,
 ) -> Result<SendMessageResult, SendMessageError> {
     crate::message_send::send(conversation_id, body).await
+}
+
+/// Apenas projeções da aplicação; nenhum evento ou token Matrix atravessa FRB.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatrixUpdateKind {
+    Message,
+    ConversationsChanged,
+    ResyncRequired,
+    Status,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatrixSyncStatus {
+    Connecting,
+    Connected,
+    Reconnecting,
+    AuthenticationRequired,
+}
+
+/// subscription_id/sequence controlam entrega, nunca representam tokens Matrix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatrixUpdate {
+    pub subscription_id: String,
+    pub sequence: u32,
+    pub kind: MatrixUpdateKind,
+    pub conversation_id: Option<String>,
+    pub message: Option<MessageSummary>,
+    pub status: MatrixSyncStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatrixStreamError {
+    NotAuthenticated,
+    SubscriberLimit,
+    SubscriptionClosed,
+    Internal,
+}
+
+/// Registra um consumidor no broadcast limitado da sessão atual, sem iniciar sync.
+pub async fn open_matrix_updates() -> Result<String, MatrixStreamError> {
+    crate::synchronization::open().await
+}
+
+/// StreamSink gera `Stream<MatrixUpdate>` em Dart. Um evento em voo por consumidor.
+pub async fn matrix_updates(
+    subscription_id: String,
+    sink: crate::frb_generated::StreamSink<MatrixUpdate>,
+) -> Result<(), MatrixStreamError> {
+    crate::synchronization::stream(subscription_id, sink).await
+}
+
+/// ACK de consumo limita inclusive a fila da porta FRB; não consulta atualizações.
+pub async fn acknowledge_matrix_update(subscription_id: String, sequence: u32) {
+    crate::synchronization::acknowledge(&subscription_id, sequence);
+}
+
+pub async fn close_matrix_updates(subscription_id: String) {
+    crate::synchronization::close(&subscription_id);
 }

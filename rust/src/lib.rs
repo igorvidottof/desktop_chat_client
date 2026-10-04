@@ -6,3 +6,5 @@ mod matrix;
 mod message_history;
 mod message_send;
 mod session_store;
+
+mod synchronization;

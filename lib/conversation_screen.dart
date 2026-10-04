@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'src/rust/api/simple.dart';
@@ -21,12 +23,14 @@ class ConversationScreen extends StatefulWidget {
     required this.load,
     required this.sessionActive,
     this.send = sendTextMessage,
+    this.updates = const Stream.empty(),
   });
 
   final ConversationSummary conversation;
   final MessageHistoryLoader load;
   final TextMessageSender send;
   final ValueNotifier<bool> sessionActive;
+  final Stream<MatrixUpdate> updates;
 
   @override
   State<ConversationScreen> createState() => _ConversationScreenState();
@@ -35,6 +39,10 @@ class ConversationScreen extends StatefulWidget {
 class _ConversationScreenState extends State<ConversationScreen> {
   final _composer = TextEditingController();
   final _scroll = ScrollController();
+  StreamSubscription<MatrixUpdate>? _subscription;
+  final _duringLoad = <MessageSummary>[];
+  bool _refreshPending = false;
+  MatrixSyncStatus _syncStatus = MatrixSyncStatus.connecting;
   bool _sending = false;
   SendMessageError? _sendError;
   String? _sentEventId;
@@ -47,7 +55,43 @@ class _ConversationScreenState extends State<ConversationScreen> {
     super.initState();
     widget.sessionActive.addListener(_sessionChanged);
     _composer.addListener(_textChanged);
+    _subscription = widget.updates.listen(_updated);
     _load();
+  }
+
+  void _updated(MatrixUpdate update) {
+    if (!mounted || !widget.sessionActive.value) return;
+    if (update.kind == MatrixUpdateKind.status) {
+      setState(() => _syncStatus = update.status);
+      return;
+    }
+    if (update.conversationId != null &&
+        update.conversationId != widget.conversation.id) {
+      return;
+    }
+    if (update.kind == MatrixUpdateKind.resyncRequired) {
+      if (_loading) {
+        _refreshPending = true;
+      } else {
+        unawaited(_load());
+      }
+      return;
+    }
+    final message = update.message;
+    if (update.kind != MatrixUpdateKind.message ||
+        message == null ||
+        _error == MessageHistoryError.encryptionUnsupported) {
+      return;
+    }
+    if (_loading) {
+      // Limite também durante requests lentos; um overflow pede novo retrato finito.
+      if (_duringLoad.length < 128) {
+        _duringLoad.add(message);
+      } else {
+        _refreshPending = true;
+      }
+    }
+    setState(() => _messages = mergeMessages(_messages, [message]));
   }
 
   void _textChanged() {
@@ -109,6 +153,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
   void _sessionChanged() {
     // O descarte da lista pode ocorrer com a árvore bloqueada durante dispose.
     // A autoridade já foi invalidada; atualizar a apresentação no próximo frame.
+    unawaited(_subscription?.cancel());
+    _duringLoad.clear();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() {
@@ -134,28 +180,37 @@ class _ConversationScreenState extends State<ConversationScreen> {
         conversationId: widget.conversation.id,
       );
       if (!mounted || !widget.sessionActive.value) return;
-      final seen = <String>{};
       setState(
         () =>
-            _messages = List.unmodifiable(
-              messages.where((message) => seen.add(message.id)),
-            ),
+            _messages = mergeMessages(messages, [..._messages, ..._duringLoad]),
       );
+      _duringLoad.clear();
     } on MessageHistoryError catch (error) {
       if (!mounted || !widget.sessionActive.value) return;
-      setState(() => _error = error);
+      setState(() {
+        _error = error;
+        if (error == MessageHistoryError.encryptionUnsupported) {
+          _messages = const [];
+          _duringLoad.clear();
+        }
+      });
     } catch (_) {
       if (!mounted || !widget.sessionActive.value) return;
       setState(() => _error = MessageHistoryError.internal);
     } finally {
       if (mounted && widget.sessionActive.value) {
         setState(() => _loading = false);
+        if (_refreshPending) {
+          _refreshPending = false;
+          unawaited(_load());
+        }
       }
     }
   }
 
   @override
   void dispose() {
+    unawaited(_subscription?.cancel());
     widget.sessionActive.removeListener(_sessionChanged);
     _composer.dispose();
     _scroll.dispose();
@@ -168,6 +223,14 @@ class _ConversationScreenState extends State<ConversationScreen> {
       appBar: AppBar(title: Text(widget.conversation.displayName)),
       body: Column(
         children: [
+          if (_syncStatus == MatrixSyncStatus.reconnecting)
+            const Text(
+              'Reconectando… As mensagens carregadas continuam disponíveis.',
+            ),
+          if (_syncStatus == MatrixSyncStatus.authenticationRequired)
+            const Text(
+              'A sincronização requer nova autenticação. Saia e entre novamente.',
+            ),
           Expanded(child: _history()),
           if (_sentEventId != null && widget.sessionActive.value)
             Semantics(
@@ -294,6 +357,25 @@ class _ConversationScreenState extends State<ConversationScreen> {
               },
             ),
           );
+}
+
+// Preserva a ordem relativa do retrato SDK. Eventos novos usam timestamp Matrix
+// para inserção, sem reorganizar o histórico por relógios divergentes/arrival time.
+List<MessageSummary> mergeMessages(
+  Iterable<MessageSummary> history,
+  Iterable<MessageSummary> incoming,
+) {
+  final seen = <String>{};
+  final result = history.where((m) => seen.add(m.id)).toList();
+  for (final message in incoming) {
+    if (!seen.add(message.id)) continue;
+    final index = result.indexWhere((m) => m.timestampMs > message.timestampMs);
+    result.insert(index < 0 ? result.length : index, message);
+  }
+  // O fluxo recente continua limitado; não adicionamos paginação nem cache infinito.
+  return List.unmodifiable(
+    result.length > 50 ? result.sublist(result.length - 50) : result,
+  );
 }
 
 String messageTimestamp(int milliseconds) {

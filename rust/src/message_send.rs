@@ -67,7 +67,7 @@ async fn send_reserved(id: String, body: String) -> Result<SendMessageResult, Se
             .await
             .map_err(map_sdk_error)?;
         // Só o servidor determina o ID. A resposta não contém timestamp autoritativo;
-        // Flutter recarrega /messages uma vez, sem sync contínuo ou timestamp inventado.
+        // Flutter recarrega /messages uma vez; sync posterior é conciliado pelo event ID.
         Ok(SendMessageResult {
             event_id: response.response.event_id.to_string(),
         })

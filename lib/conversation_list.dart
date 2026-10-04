@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'src/rust/api/simple.dart';
 import 'conversation_screen.dart';
+import 'matrix_updates.dart';
 
 typedef ConversationLoader = Future<List<ConversationSummary>> Function();
 
@@ -11,11 +14,13 @@ class ConversationList extends StatefulWidget {
     required this.load,
     required this.loadHistory,
     this.sendMessage = sendTextMessage,
+    this.updates = EmptyMatrixUpdateSource.new,
   });
 
   final ConversationLoader load;
   final MessageHistoryLoader loadHistory;
   final TextMessageSender sendMessage;
+  final MatrixUpdateSourceFactory updates;
 
   @override
   State<ConversationList> createState() => _ConversationListState();
@@ -23,6 +28,10 @@ class ConversationList extends StatefulWidget {
 
 class _ConversationListState extends State<ConversationList> {
   final _historySessions = <ValueNotifier<bool>>{};
+  late final MatrixUpdateSource _source;
+  StreamSubscription<MatrixUpdate>? _subscription;
+  bool _refreshPending = false;
+  bool _loadInFlight = false;
   bool _loading = true;
   List<ConversationSummary> _rooms = const [];
   ConversationError? _error;
@@ -30,12 +39,26 @@ class _ConversationListState extends State<ConversationList> {
   @override
   void initState() {
     super.initState();
+    _source = widget.updates();
+    _subscription = _source.updates.listen((update) {
+      if (update.kind == MatrixUpdateKind.conversationsChanged ||
+          (update.kind == MatrixUpdateKind.resyncRequired &&
+              update.conversationId == null)) {
+        if (_loadInFlight) {
+          _refreshPending = true;
+        } else {
+          unawaited(_load(background: true));
+        }
+      }
+    });
     _load();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool background = false}) async {
+    if (_loadInFlight || !mounted) return;
+    _loadInFlight = true;
     setState(() {
-      _loading = true;
+      _loading = !background;
       _error = null;
     });
     try {
@@ -50,7 +73,14 @@ class _ConversationListState extends State<ConversationList> {
       if (!mounted) return;
       setState(() => _error = ConversationError.internal);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      _loadInFlight = false;
+      if (mounted) {
+        setState(() => _loading = false);
+        if (_refreshPending) {
+          _refreshPending = false;
+          unawaited(_load(background: true));
+        }
+      }
     }
   }
 
@@ -66,6 +96,7 @@ class _ConversationListState extends State<ConversationList> {
                 load: widget.loadHistory,
                 send: widget.sendMessage,
                 sessionActive: active,
+                updates: _source.updates,
               ),
         ),
       );
@@ -81,6 +112,8 @@ class _ConversationListState extends State<ConversationList> {
     for (final active in _historySessions) {
       active.value = false;
     }
+    unawaited(_subscription?.cancel());
+    unawaited(_source.dispose());
     super.dispose();
   }
 

@@ -19,6 +19,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   });
 
   @protected
+  AnyhowException dco_decode_AnyhowException(dynamic raw);
+
+  @protected
+  RustStreamSink<MatrixUpdate> dco_decode_StreamSink_matrix_update_Sse(
+    dynamic raw,
+  );
+
+  @protected
   String dco_decode_String(dynamic raw);
 
   @protected
@@ -29,6 +37,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   AccountSummary dco_decode_box_autoadd_account_summary(dynamic raw);
+
+  @protected
+  MessageSummary dco_decode_box_autoadd_message_summary(dynamic raw);
 
   @protected
   ConversationError dco_decode_conversation_error(dynamic raw);
@@ -61,13 +72,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LogoutResult dco_decode_logout_result(dynamic raw);
 
   @protected
+  MatrixStreamError dco_decode_matrix_stream_error(dynamic raw);
+
+  @protected
+  MatrixSyncStatus dco_decode_matrix_sync_status(dynamic raw);
+
+  @protected
+  MatrixUpdate dco_decode_matrix_update(dynamic raw);
+
+  @protected
+  MatrixUpdateKind dco_decode_matrix_update_kind(dynamic raw);
+
+  @protected
   MessageHistoryError dco_decode_message_history_error(dynamic raw);
 
   @protected
   MessageSummary dco_decode_message_summary(dynamic raw);
 
   @protected
+  String? dco_decode_opt_String(dynamic raw);
+
+  @protected
   AccountSummary? dco_decode_opt_box_autoadd_account_summary(dynamic raw);
+
+  @protected
+  MessageSummary? dco_decode_opt_box_autoadd_message_summary(dynamic raw);
 
   @protected
   ProbeError dco_decode_probe_error(dynamic raw);
@@ -91,7 +120,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SessionState dco_decode_session_state(dynamic raw);
 
   @protected
+  int dco_decode_u_32(dynamic raw);
+
+  @protected
   int dco_decode_u_8(dynamic raw);
+
+  @protected
+  void dco_decode_unit(dynamic raw);
+
+  @protected
+  AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
+
+  @protected
+  RustStreamSink<MatrixUpdate> sse_decode_StreamSink_matrix_update_Sse(
+    SseDeserializer deserializer,
+  );
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
@@ -104,6 +147,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   AccountSummary sse_decode_box_autoadd_account_summary(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MessageSummary sse_decode_box_autoadd_message_summary(
     SseDeserializer deserializer,
   );
 
@@ -144,6 +192,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LogoutResult sse_decode_logout_result(SseDeserializer deserializer);
 
   @protected
+  MatrixStreamError sse_decode_matrix_stream_error(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MatrixSyncStatus sse_decode_matrix_sync_status(SseDeserializer deserializer);
+
+  @protected
+  MatrixUpdate sse_decode_matrix_update(SseDeserializer deserializer);
+
+  @protected
+  MatrixUpdateKind sse_decode_matrix_update_kind(SseDeserializer deserializer);
+
+  @protected
   MessageHistoryError sse_decode_message_history_error(
     SseDeserializer deserializer,
   );
@@ -152,7 +214,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   MessageSummary sse_decode_message_summary(SseDeserializer deserializer);
 
   @protected
+  String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
   AccountSummary? sse_decode_opt_box_autoadd_account_summary(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  MessageSummary? sse_decode_opt_box_autoadd_message_summary(
     SseDeserializer deserializer,
   );
 
@@ -182,7 +252,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SessionState sse_decode_session_state(SseDeserializer deserializer);
 
   @protected
+  int sse_decode_u_32(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_u_8(SseDeserializer deserializer);
+
+  @protected
+  void sse_decode_unit(SseDeserializer deserializer);
+
+  @protected
+  void sse_encode_AnyhowException(
+    AnyhowException self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_StreamSink_matrix_update_Sse(
+    RustStreamSink<MatrixUpdate> self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
@@ -199,6 +287,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_account_summary(
     AccountSummary self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_message_summary(
+    MessageSummary self,
     SseSerializer serializer,
   );
 
@@ -248,6 +342,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_logout_result(LogoutResult self, SseSerializer serializer);
 
   @protected
+  void sse_encode_matrix_stream_error(
+    MatrixStreamError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_matrix_sync_status(
+    MatrixSyncStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_matrix_update(MatrixUpdate self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_matrix_update_kind(
+    MatrixUpdateKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_message_history_error(
     MessageHistoryError self,
     SseSerializer serializer,
@@ -260,8 +375,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_box_autoadd_account_summary(
     AccountSummary? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_message_summary(
+    MessageSummary? self,
     SseSerializer serializer,
   );
 
@@ -296,7 +420,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_session_state(SessionState self, SseSerializer serializer);
 
   @protected
+  void sse_encode_u_32(int self, SseSerializer serializer);
+
+  @protected
   void sse_encode_u_8(int self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_unit(void self, SseSerializer serializer);
 }
 
 // Section: wire_class

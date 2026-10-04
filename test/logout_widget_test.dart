@@ -56,17 +56,20 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Sala antiga'), findsOneWidget);
+      final logoutButton =
+          tester
+              .widget<FilledButton>(find.widgetWithText(FilledButton, 'Logout'))
+              .onPressed!;
       await tester.tap(find.text('Logout'));
       await tester.pump();
-      expect(find.text('Saindo…'), findsOneWidget);
+      expect(find.text('Saindo da sua conta…'), findsOneWidget);
+      expect(find.text('Encerrando a sincronização…'), findsOneWidget);
       expect(find.text('Sala antiga'), findsNothing);
-      expect(
-        tester
-            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Logout'))
-            .onPressed,
-        isNull,
-      );
-      await tester.tap(find.text('Logout'));
+      expect(find.text('Logout'), findsNothing);
+      expect(find.text(account.userId), findsNothing);
+      expect(find.text('Verificar servidor'), findsNothing);
+      // Mesmo um callback capturado antes do rebuild respeita a reserva existente.
+      logoutButton();
       expect(calls, 1);
       pending.complete(
         LogoutResult(remoteStatus: status, storeCleanupPending: false),
@@ -85,6 +88,106 @@ void main() {
       );
     });
   }
+
+  testWidgets('Espera longa gira texto local e mantém uma única saída', (
+    tester,
+  ) async {
+    final pending = Completer<LogoutResult>();
+    var calls = 0;
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      logoutApp(
+        logout: () {
+          calls++;
+          return pending.future;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Logout'));
+    await tester.pump();
+    expect(
+      tester
+          .widget<CircularProgressIndicator>(
+            find.byType(CircularProgressIndicator),
+          )
+          .value,
+      isNull,
+    );
+    expect(
+      find.bySemanticsLabel(
+        'Saindo da sua conta. Aguarde o encerramento da sessão.',
+      ),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 2999));
+    expect(find.text('Encerrando a sincronização…'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(find.text('Finalizando operações em andamento…'), findsOneWidget);
+    for (final message in [
+      'Protegendo os dados da sua sessão…',
+      'Só mais alguns instantes…',
+      'Finalizando com segurança…',
+      'Finalizando operações em andamento…',
+      'Protegendo os dados da sua sessão…',
+    ]) {
+      await tester.pump(const Duration(seconds: 3));
+      expect(find.text(message), findsOneWidget);
+      expect(find.text('Encerrando a sincronização…'), findsNothing);
+    }
+    expect(calls, 1);
+    pending.complete(
+      const LogoutResult(
+        remoteStatus: RemoteLogoutStatus.confirmed,
+        storeCleanupPending: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 30));
+    expect(find.text('Entrar'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(calls, 1);
+    expect(tester.takeException(), isNull);
+    semantics.dispose();
+  });
+
+  testWidgets('Falha após rotação cancela espera e retry reinicia texto', (
+    tester,
+  ) async {
+    final first = Completer<LogoutResult>();
+    final second = Completer<LogoutResult>();
+    var calls = 0;
+    await tester.pumpWidget(
+      logoutApp(logout: () => ++calls == 1 ? first.future : second.future),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Logout'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 6));
+    expect(find.text('Protegendo os dados da sua sessão…'), findsOneWidget);
+    first.completeError(LogoutError.localCleanup);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 30));
+    expect(
+      find.text(logoutErrorMessage(LogoutError.localCleanup)),
+      findsOneWidget,
+    );
+    expect(find.text(account.userId), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(calls, 1);
+    await tester.tap(find.text('Logout'));
+    await tester.pump();
+    expect(find.text('Encerrando a sincronização…'), findsOneWidget);
+    expect(calls, 2);
+    second.complete(
+      const LogoutResult(
+        remoteStatus: RemoteLogoutStatus.confirmed,
+        storeCleanupPending: false,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Entrar'), findsOneWidget);
+  });
 
   for (final error in [
     LogoutError.secureStorage,
@@ -167,6 +270,8 @@ void main() {
     await tester.tap(find.text('Logout'));
     await tester.pump();
     await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 30));
+    expect(tester.takeException(), isNull);
     pending.completeError(StateError('synthetic-private-detail'));
     await tester.pump();
     expect(tester.takeException(), isNull);

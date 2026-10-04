@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Consulta os métodos de acesso sem autenticar ou reter um cliente global.
 Future<ServerInfo> probeServer({required String address}) =>
@@ -23,7 +23,7 @@ Future<AccountSummary> login({
   password: password,
 );
 
-/// Sincroniza uma única vez e retorna somente salas ingressadas que não são espaços.
+/// Lê o retrato do store atualizado pelo único proprietário de sync contínuo.
 Future<List<ConversationSummary>> listConversations() =>
     RustLib.instance.api.crateApiSimpleListConversations();
 
@@ -49,6 +49,30 @@ Future<SendMessageResult> sendTextMessage({
   conversationId: conversationId,
   body: body,
 );
+
+/// Registra um consumidor no broadcast limitado da sessão atual, sem iniciar sync.
+Future<String> openMatrixUpdates() =>
+    RustLib.instance.api.crateApiSimpleOpenMatrixUpdates();
+
+/// StreamSink gera `Stream<MatrixUpdate>` em Dart. Um evento em voo por consumidor.
+Stream<MatrixUpdate> matrixUpdates({required String subscriptionId}) => RustLib
+    .instance
+    .api
+    .crateApiSimpleMatrixUpdates(subscriptionId: subscriptionId);
+
+/// ACK de consumo limita inclusive a fila da porta FRB; não consulta atualizações.
+Future<void> acknowledgeMatrixUpdate({
+  required String subscriptionId,
+  required int sequence,
+}) => RustLib.instance.api.crateApiSimpleAcknowledgeMatrixUpdate(
+  subscriptionId: subscriptionId,
+  sequence: sequence,
+);
+
+Future<void> closeMatrixUpdates({required String subscriptionId}) => RustLib
+    .instance
+    .api
+    .crateApiSimpleCloseMatrixUpdates(subscriptionId: subscriptionId);
 
 /// Projeção pública da conta; a sessão e seus segredos permanecem no SDK em Rust.
 class AccountSummary {
@@ -153,6 +177,63 @@ class LogoutResult {
           remoteStatus == other.remoteStatus &&
           storeCleanupPending == other.storeCleanupPending;
 }
+
+enum MatrixStreamError {
+  notAuthenticated,
+  subscriberLimit,
+  subscriptionClosed,
+  internal,
+}
+
+enum MatrixSyncStatus {
+  connecting,
+  connected,
+  reconnecting,
+  authenticationRequired,
+}
+
+/// subscription_id/sequence controlam entrega, nunca representam tokens Matrix.
+class MatrixUpdate {
+  final String subscriptionId;
+  final int sequence;
+  final MatrixUpdateKind kind;
+  final String? conversationId;
+  final MessageSummary? message;
+  final MatrixSyncStatus status;
+
+  const MatrixUpdate({
+    required this.subscriptionId,
+    required this.sequence,
+    required this.kind,
+    this.conversationId,
+    this.message,
+    required this.status,
+  });
+
+  @override
+  int get hashCode =>
+      subscriptionId.hashCode ^
+      sequence.hashCode ^
+      kind.hashCode ^
+      conversationId.hashCode ^
+      message.hashCode ^
+      status.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MatrixUpdate &&
+          runtimeType == other.runtimeType &&
+          subscriptionId == other.subscriptionId &&
+          sequence == other.sequence &&
+          kind == other.kind &&
+          conversationId == other.conversationId &&
+          message == other.message &&
+          status == other.status;
+}
+
+/// Apenas projeções da aplicação; nenhum evento ou token Matrix atravessa FRB.
+enum MatrixUpdateKind { message, conversationsChanged, resyncRequired, status }
 
 /// Categorias fixas sem conteúdo remoto ou detalhes internos.
 enum MessageHistoryError {

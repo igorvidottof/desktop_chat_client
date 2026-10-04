@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'src/rust/api/simple.dart';
 import 'conversation_list.dart';
+import 'matrix_updates.dart';
+import 'logout_progress_screen.dart';
 import 'conversation_screen.dart';
 import 'src/rust/frb_generated.dart';
 
@@ -10,6 +12,7 @@ Future<void> main() async {
   await RustLib.init();
   runApp(
     MyApp(
+      updates: NativeMatrixUpdateSource.new,
       initialize: initializeSession,
       logoutAction: logout,
       loadConversations: listConversations,
@@ -45,6 +48,7 @@ class MyApp extends StatelessWidget {
     required this.loadConversations,
     this.loadHistory = loadMessageHistory,
     this.sendMessage = sendTextMessage,
+    this.updates = EmptyMatrixUpdateSource.new,
   });
 
   final SessionInitializer initialize;
@@ -54,6 +58,7 @@ class MyApp extends StatelessWidget {
   final ConversationLoader loadConversations;
   final MessageHistoryLoader loadHistory;
   final TextMessageSender sendMessage;
+  final MatrixUpdateSourceFactory updates;
 
   @override
   Widget build(BuildContext context) {
@@ -70,6 +75,7 @@ class MyApp extends StatelessWidget {
         loadConversations: loadConversations,
         loadHistory: loadHistory,
         sendMessage: sendMessage,
+        updates: updates,
       ),
     );
   }
@@ -85,6 +91,7 @@ class LoginScreen extends StatefulWidget {
     required this.loadConversations,
     required this.loadHistory,
     this.sendMessage = sendTextMessage,
+    this.updates = EmptyMatrixUpdateSource.new,
   });
 
   final SessionInitializer initialize;
@@ -94,6 +101,7 @@ class LoginScreen extends StatefulWidget {
   final ConversationLoader loadConversations;
   final MessageHistoryLoader loadHistory;
   final TextMessageSender sendMessage;
+  final MatrixUpdateSourceFactory updates;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -261,6 +269,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Substituir a árvore invalida assinaturas/rotas antes de apresentar a espera.
+    // O futuro Rust continua responsável por todo o encerramento seguro.
+    if (_loggingOut) return const LogoutProgressScreen();
+
     if (_initializing ||
         (_sessionError != null &&
             _sessionError != SessionError.invalidSession)) {
@@ -373,16 +385,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _loading || _loggingOut ? null : _logout,
                     child: const Text('Logout'),
                   ),
-                  if (_loggingOut) ...[
-                    const CircularProgressIndicator(),
-                    const Text('Saindo…'),
-                  ] else
-                    // Desmontar durante logout invalida callbacks de salas antigas.
-                    ConversationList(
-                      load: widget.loadConversations,
-                      loadHistory: widget.loadHistory,
-                      sendMessage: widget.sendMessage,
-                    ),
+                  ConversationList(
+                    load: widget.loadConversations,
+                    loadHistory: widget.loadHistory,
+                    sendMessage: widget.sendMessage,
+                    updates: widget.updates,
+                  ),
                 ],
                 if (_logoutError case final error?)
                   Semantics(

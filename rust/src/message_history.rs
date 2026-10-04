@@ -103,25 +103,8 @@ fn map_history<'a>(
         if raw.get_field::<String>("type").ok().flatten().as_deref() == Some("m.room.encrypted") {
             return Err(MessageHistoryError::EncryptionUnsupported);
         }
-        // Eventos malformados, redigidos e tipos não suportados são descartados individualmente.
-        if let Ok(AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(
-            SyncMessageLikeEvent::Original(event),
-        ))) = raw.deserialize()
-        {
-            let body = match event.content.msgtype {
-                MessageType::Text(content) => content.body,
-                MessageType::Notice(content) => content.body,
-                MessageType::Emote(content) => content.body,
-                _ => continue,
-            };
-            let timestamp_ms = i64::from(event.origin_server_ts.0);
-            messages.push(MessageSummary {
-                id: event.event_id.to_string(),
-                sender_id: event.sender.to_string(),
-                body,
-                timestamp_ms,
-                is_own: event.sender == own_id,
-            });
+        if let Some(message) = map_message(raw, own_id) {
+            messages.push(message);
         }
     }
     // /messages backward vem em ordem inversa da timeline; inverter preserva essa ordem,
@@ -130,6 +113,35 @@ fn map_history<'a>(
     let mut seen = std::collections::HashSet::new();
     messages.retain(|message| seen.insert(message.id.clone()));
     Ok(messages)
+}
+
+// A projeção é idêntica no histórico e no sync; relações (edits/replies) ficam fora.
+pub(crate) fn map_message(
+    raw: &Raw<AnySyncTimelineEvent>,
+    own_id: &UserId,
+) -> Option<MessageSummary> {
+    let AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(
+        SyncMessageLikeEvent::Original(event),
+    )) = raw.deserialize().ok()?
+    else {
+        return None;
+    };
+    if event.content.relates_to.is_some() {
+        return None;
+    }
+    let body = match event.content.msgtype {
+        MessageType::Text(content) => content.body,
+        MessageType::Notice(content) => content.body,
+        MessageType::Emote(content) => content.body,
+        _ => return None,
+    };
+    Some(MessageSummary {
+        id: event.event_id.to_string(),
+        sender_id: event.sender.to_string(),
+        body,
+        timestamp_ms: i64::from(event.origin_server_ts.0),
+        is_own: event.sender == own_id,
+    })
 }
 
 fn map_auth_error(error: ConversationError) -> MessageHistoryError {
