@@ -219,34 +219,89 @@ void main() {
     },
   );
 
-  testWidgets('encrypted history stays explicitly unsupported on live input', (
-    tester,
-  ) async {
-    final source = FakeSource();
-    final active = ValueNotifier(true);
-    await tester.pumpWidget(
-      screen(
-        source.updates,
-        active,
-        load:
-            ({required conversationId}) async =>
-                throw MessageHistoryError.encryptionUnsupported,
-      ),
-    );
-    await tester.pumpAndSettle();
-    source.controller.add(update(message: message('ignored', 30)));
-    await tester.pump();
-    expect(find.text('ignored'), findsNothing);
-    expect(
-      find.text(
-        messageHistoryErrorMessage(MessageHistoryError.encryptionUnsupported),
-      ),
-      findsOneWidget,
-    );
-    await tester.pumpWidget(const SizedBox());
-    await source.dispose();
-    active.dispose();
-  });
+  testWidgets(
+    'Missing keys show a safe placeholder then a bounded refresh replaces it',
+    (tester) async {
+      final source = FakeSource();
+      final active = ValueNotifier(true);
+      var loads = 0;
+      const placeholder = 'Não foi possível descriptografar esta mensagem.';
+      MessageSummary item(String body) => MessageSummary(
+        id: r'$encrypted',
+        senderId: '@other:example.org',
+        body: body,
+        timestampMs: 30,
+        isOwn: false,
+      );
+      await tester.pumpWidget(
+        screen(
+          source.updates,
+          active,
+          load: ({required conversationId}) async {
+            loads++;
+            return [item(loads == 1 ? placeholder : 'Decrypted text')];
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(placeholder), findsOneWidget);
+      expect(find.byType(TextField), findsOneWidget);
+      source.controller.add(update(message: item(placeholder)));
+      await tester.pump();
+      expect(find.text(placeholder), findsOneWidget);
+      source.controller.add(update(kind: MatrixUpdateKind.resyncRequired));
+      await tester.pumpAndSettle();
+      expect(loads, 2);
+      expect(find.text(placeholder), findsNothing);
+      expect(find.text('Decrypted text'), findsOneWidget);
+      source.controller.add(update(message: item('Decrypted text')));
+      await tester.pump();
+      expect(find.text('Decrypted text'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await source.dispose();
+      active.dispose();
+    },
+  );
+
+  testWidgets(
+    'Own encrypted send deduplicates against history and later sync',
+    (tester) async {
+      final source = FakeSource();
+      final active = ValueNotifier(true);
+      var accepted = false;
+      final own = MessageSummary(
+        id: r'$own-encrypted',
+        senderId: '@me:example.org',
+        body: 'Own encrypted text',
+        timestampMs: 40,
+        isOwn: true,
+      );
+      await tester.pumpWidget(
+        screen(
+          source.updates,
+          active,
+          load: ({required conversationId}) async => accepted ? [own] : [],
+          send: ({required conversationId, required body}) async {
+            accepted = true;
+            source.controller.add(update(message: own));
+            return const SendMessageResult(eventId: r'$own-encrypted');
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), own.body);
+      await tester.pump();
+      await tester.tap(find.text('Enviar'));
+      await tester.pumpAndSettle();
+      source.controller.add(update(message: own));
+      await tester.pump();
+      expect(find.text(own.body), findsOneWidget);
+      expect(find.text('Mensagem enviada.'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      await source.dispose();
+      active.dispose();
+    },
+  );
 
   testWidgets(
     'list refreshes metadata once while messages never reload it; screens share source',

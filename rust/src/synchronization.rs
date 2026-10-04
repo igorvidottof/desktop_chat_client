@@ -4,6 +4,7 @@ use crate::{
     frb_generated::StreamSink,
     message_history,
 };
+use futures_util::StreamExt;
 use matrix_sdk::{
     config::SyncSettings,
     sync::{State, SyncResponse},
@@ -169,6 +170,48 @@ impl SyncOwner {
 }
 
 async fn run(client: Client, hub: Arc<UpdateHub>) {
+    // Subscribe before the first sync so keys received by that sync cannot be
+    // missed. This listener shares the sync owner's lifetime; it never syncs.
+    let Some(keys) = client.encryption().room_keys_received_stream().await else {
+        run_sync(client, hub).await;
+        return;
+    };
+    tokio::pin!(keys);
+    let sync = run_sync(client.clone(), Arc::clone(&hub));
+    tokio::pin!(sync);
+    loop {
+        tokio::select! {
+            _ = &mut sync => return,
+            update = keys.next() => {
+                match update {
+                    Some(Ok(keys)) => publish_key_refresh(&hub, keys.into_iter().map(|key| key.room_id)),
+                    Some(Err(_)) => {
+                        // A lagged key stream invalidates the bounded active history.
+                        hub.emit(hub.update(MatrixUpdateKind::ResyncRequired));
+                    }
+                    None => { sync.await; return; }
+                }
+            }
+        }
+    }
+}
+
+fn publish_key_refresh(
+    hub: &UpdateHub,
+    rooms: impl IntoIterator<Item = matrix_sdk::ruma::OwnedRoomId>,
+) {
+    // Deduplicate this SDK batch only. No event/key cache survives the callback.
+    let mut seen = std::collections::HashSet::new();
+    for room in rooms {
+        if seen.insert(room.clone()) {
+            let mut event = hub.update(MatrixUpdateKind::ResyncRequired);
+            event.conversation_id = Some(room.to_string());
+            hub.emit(event);
+        }
+    }
+}
+
+async fn run_sync(client: Client, hub: Arc<UpdateHub>) {
     let stop = hub.stopped.subscribe();
     // O callback precisa ser Fn. Estado pequeno do backoff fica atrás de mutex,
     // sem manter a trava durante awaits; callbacks são sequenciais no SDK.
@@ -285,13 +328,6 @@ fn publish_response(client: &Client, hub: &UpdateHub, response: &SyncResponse, i
             let mut event = hub.update(MatrixUpdateKind::ResyncRequired);
             event.conversation_id = Some(id.to_string());
             hub.emit(event);
-        }
-        // Estado final já aplicado pelo SDK: nunca transportar texto de sala cifrada/unknown.
-        if !matches!(
-            room.encryption_state(),
-            matrix_sdk::EncryptionState::NotEncrypted
-        ) {
-            continue;
         }
         if update.timeline.limited {
             let mut event = hub.update(MatrixUpdateKind::ResyncRequired);
@@ -629,7 +665,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn processed_batch_maps_plain_room_and_ignores_encrypted_room() {
+    async fn processed_batch_maps_plain_and_encrypted_rooms() {
         use matrix_sdk::{
             ruma::room_id,
             sync::{JoinedRoomUpdate, Timeline},
@@ -672,11 +708,13 @@ mod tests {
             timeline: Timeline {
                 limited: false,
                 prev_batch: None,
-                events: vec![
+                events: vec![if id == "$encrypted" {
+                    message_history::tests::decrypted_event(text(id, "m.text"))
+                } else {
                     matrix_sdk::deserialized_responses::TimelineEvent::from_plaintext(text(
                         id, "m.text",
-                    )),
-                ],
+                    ))
+                }],
             },
             state: Default::default(),
             account_data: vec![],
@@ -693,9 +731,16 @@ mod tests {
             .insert(room_id!("!plain:example.org").to_owned(), batch("$plain"));
         response.rooms.joined.insert(
             room_id!("!encrypted:example.org").to_owned(),
-            batch("$never"),
+            batch("$encrypted"),
         );
         publish_response(&client, &hub, &response, false);
+        let encrypted = receiver.recv().await.unwrap();
+        assert_eq!(encrypted.kind, MatrixUpdateKind::Message);
+        assert_eq!(
+            encrypted.conversation_id.as_deref(),
+            Some("!encrypted:example.org")
+        );
+        assert_eq!(encrypted.message.unwrap().id, "$encrypted");
         let event = receiver.recv().await.unwrap();
         assert_eq!(event.kind, MatrixUpdateKind::Message);
         assert_eq!(event.conversation_id.as_deref(), Some("!plain:example.org"));
@@ -710,6 +755,10 @@ mod tests {
             .limited = true;
         publish_response(&client, &hub, &response, true);
         assert_eq!(
+            receiver.recv().await.unwrap().message.unwrap().id,
+            "$encrypted"
+        );
+        assert_eq!(
             receiver.recv().await.unwrap().kind,
             MatrixUpdateKind::ResyncRequired
         );
@@ -721,6 +770,56 @@ mod tests {
             receiver.recv().await.unwrap().kind,
             MatrixUpdateKind::ConversationsChanged
         );
+        assert!(receiver.try_recv().is_err());
+        // SDK UTD events travel through the same processed callback safely.
+        let raw = Raw::from_json_string(json!({
+            "type":"m.room.encrypted", "event_id":"$utd", "sender":"@me:example.org", "origin_server_ts":456,
+            "content":{"ciphertext":"NEVER_FORWARD"}
+        }).to_string()).unwrap();
+        response.rooms.joined.clear();
+        let mut update = batch("$encrypted");
+        update.timeline.events = vec![matrix_sdk::deserialized_responses::TimelineEvent::from_utd(raw,
+            matrix_sdk::deserialized_responses::UnableToDecryptInfo { session_id: None,
+                reason: matrix_sdk::deserialized_responses::UnableToDecryptReason::MalformedEncryptedEvent })];
+        response
+            .rooms
+            .joined
+            .insert(room_id!("!encrypted:example.org").to_owned(), update);
+        publish_response(&client, &hub, &response, false);
+        let event = receiver.recv().await.unwrap();
+        assert_eq!(event.kind, MatrixUpdateKind::Message);
+        let message = event.message.unwrap();
+        assert_eq!(message.id, "$utd");
+        assert_eq!(
+            message.body,
+            "Não foi possível descriptografar esta mensagem."
+        );
+        assert_eq!(message.timestamp_ms, 456);
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn key_batches_request_one_bounded_refresh_per_room_without_retaining_events() {
+        use matrix_sdk::ruma::room_id;
+        let hub = UpdateHub::new();
+        let mut receiver = hub.sender.subscribe();
+        publish_key_refresh(
+            &hub,
+            [
+                room_id!("!a:example.org").to_owned(),
+                room_id!("!a:example.org").to_owned(),
+                room_id!("!b:example.org").to_owned(),
+            ],
+        );
+        for id in ["!a:example.org", "!b:example.org"] {
+            let update = receiver.recv().await.unwrap();
+            assert_eq!(update.kind, MatrixUpdateKind::ResyncRequired);
+            assert_eq!(update.conversation_id.as_deref(), Some(id));
+            assert!(update.message.is_none());
+        }
+        assert!(receiver.try_recv().is_err());
+        hub.stop();
+        publish_key_refresh(&hub, [room_id!("!a:example.org").to_owned()]);
         assert!(receiver.try_recv().is_err());
     }
 

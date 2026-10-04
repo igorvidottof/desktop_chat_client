@@ -1619,6 +1619,8 @@ mod tests {
                     _ => panic!("isolated login mock failed"),
                 }
             };
+            // macOS accepted sockets inherit the listener's nonblocking flag.
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(std::time::Duration::from_secs(5)))
                 .unwrap();

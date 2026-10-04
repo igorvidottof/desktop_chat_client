@@ -3455,6 +3455,7 @@ version = "0.1.0"
 dependencies = [
  "directories",
  "flutter_rust_bridge",
+ "futures-util",
  "getrandom 0.4.3",
  "keyring",
  "matrix-sdk",

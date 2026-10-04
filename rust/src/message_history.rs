@@ -28,12 +28,6 @@ pub(crate) async fn load(id: &str) -> Result<Vec<MessageSummary>, MessageHistory
         let own_id = client
             .user_id()
             .ok_or(MessageHistoryError::NotAuthenticated)?;
-        // E2EE não está habilitado. Unknown deve ser resolvido pelo SDK, nunca virar vazio.
-        let encryption = room
-            .latest_encryption_state()
-            .await
-            .map_err(map_sdk_error)?;
-        ensure_unencrypted(encryption)?;
         let history = room
             .messages(history_options())
             .await
@@ -74,18 +68,6 @@ pub(crate) fn ensure_joined(state: RoomState) -> Result<(), MessageHistoryError>
     }
 }
 
-pub(crate) fn ensure_unencrypted(
-    state: matrix_sdk::EncryptionState,
-) -> Result<(), MessageHistoryError> {
-    if state.is_encrypted() {
-        Err(MessageHistoryError::EncryptionUnsupported)
-    } else if state.is_unknown() {
-        Err(MessageHistoryError::History)
-    } else {
-        Ok(())
-    }
-}
-
 fn history_options() -> MessagesOptions {
     // O limite pertence à aplicação; from/to ausentes iniciam no fim visível, sem paginação.
     let mut options = MessagesOptions::backward();
@@ -99,10 +81,6 @@ fn map_history<'a>(
 ) -> Result<Vec<MessageSummary>, MessageHistoryError> {
     let mut messages = Vec::new();
     for raw in events {
-        // Mesmo um evento cifrado malformado não pode produzir um falso histórico vazio.
-        if raw.get_field::<String>("type").ok().flatten().as_deref() == Some("m.room.encrypted") {
-            return Err(MessageHistoryError::EncryptionUnsupported);
-        }
         if let Some(message) = map_message(raw, own_id) {
             messages.push(message);
         }
@@ -120,6 +98,26 @@ pub(crate) fn map_message(
     raw: &Raw<AnySyncTimelineEvent>,
     own_id: &UserId,
 ) -> Option<MessageSummary> {
+    // Only transport safe envelope metadata for an encrypted event the SDK could
+    // not decrypt. Its content is never deserialized or forwarded to Flutter.
+    if raw.get_field::<String>("type").ok().flatten().as_deref() == Some("m.room.encrypted") {
+        let id = raw
+            .get_field::<matrix_sdk::ruma::OwnedEventId>("event_id")
+            .ok()??;
+        let sender = raw
+            .get_field::<matrix_sdk::ruma::OwnedUserId>("sender")
+            .ok()??;
+        let timestamp = raw
+            .get_field::<matrix_sdk::ruma::MilliSecondsSinceUnixEpoch>("origin_server_ts")
+            .ok()??;
+        return Some(MessageSummary {
+            id: id.to_string(),
+            sender_id: sender.to_string(),
+            body: "Não foi possível descriptografar esta mensagem.".into(),
+            timestamp_ms: i64::from(timestamp.0),
+            is_own: sender == own_id,
+        });
+    }
     let AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(
         SyncMessageLikeEvent::Original(event),
     )) = raw.deserialize().ok()?
@@ -179,7 +177,7 @@ fn map_http_error(error: &HttpError) -> MessageHistoryError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use matrix_sdk::ruma::{
         api::{
@@ -205,6 +203,60 @@ mod tests {
             .to_string(),
         )
         .unwrap()
+    }
+
+    // Construct the official SDK decrypted representation, including encryption
+    // metadata which must remain behind the bridge boundary.
+    pub(crate) fn decrypted_event(
+        raw: Raw<AnySyncTimelineEvent>,
+    ) -> matrix_sdk::deserialized_responses::TimelineEvent {
+        use matrix_sdk::deserialized_responses::{
+            AlgorithmInfo, DecryptedRoomEvent, EncryptionInfo, TimelineEvent, VerificationState,
+        };
+        TimelineEvent::from_decrypted(
+            DecryptedRoomEvent {
+                event: raw.cast_unchecked(),
+                encryption_info: std::sync::Arc::new(EncryptionInfo {
+                    sender: user_id!("@me:example.org").to_owned(),
+                    sender_device: None,
+                    forwarder: None,
+                    algorithm_info: AlgorithmInfo::MegolmV1AesSha2 {
+                        curve25519_key: "synthetic-metadata-never-forwarded".into(),
+                        sender_claimed_keys: Default::default(),
+                        session_id: Some("synthetic-session".into()),
+                    },
+                    verification_state: VerificationState::Verified,
+                }),
+                unsigned_encryption_info: None,
+            },
+            None,
+        )
+    }
+
+    #[test]
+    fn decrypted_sdk_history_uses_common_mapper_preserving_identity_and_order() {
+        let own = user_id!("@me:example.org");
+        let events = [
+            decrypted_event(event("$new", own.as_str(), "m.emote", "ação", 3000)),
+            decrypted_event(event(
+                "$notice",
+                "@other:example.org",
+                "m.notice",
+                "aviso",
+                2000,
+            )),
+            decrypted_event(event("$old", own.as_str(), "m.text", "texto", 1000)),
+            decrypted_event(event("$old", own.as_str(), "m.text", "texto", 1000)),
+        ];
+        let messages = map_history(events.iter().map(|e| e.raw()), own).unwrap();
+        assert_eq!(
+            messages.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+            ["$old", "$notice", "$new"]
+        );
+        assert_eq!(messages[0].body, "texto");
+        assert_eq!(messages[0].sender_id, own.as_str());
+        assert_eq!(messages[0].timestamp_ms, 1000);
+        assert!(messages[0].is_own && messages[2].is_own && !messages[1].is_own);
     }
 
     #[test]
@@ -278,28 +330,38 @@ mod tests {
     }
 
     #[test]
-    fn encrypted_even_malformed_events_never_become_empty_history() {
-        assert_eq!(
-            ensure_unencrypted(matrix_sdk::EncryptionState::Encrypted),
-            Err(MessageHistoryError::EncryptionUnsupported)
+    fn undecryptable_events_use_only_valid_envelope_metadata() {
+        let own = user_id!("@me:example.org");
+        let encrypted = Raw::from_json_string(serde_json::json!({
+            "type":"m.room.encrypted", "event_id":"$encrypted", "sender":own,
+            "origin_server_ts":42, "content":{"ciphertext":"NEVER_FORWARD", "algorithm":"invalid"}
+        }).to_string()).unwrap();
+        use matrix_sdk::deserialized_responses::{
+            TimelineEvent, UnableToDecryptInfo, UnableToDecryptReason,
+        };
+        let utd = TimelineEvent::from_utd(
+            encrypted.clone(),
+            UnableToDecryptInfo {
+                session_id: Some("synthetic-diagnostic-never-forwarded".into()),
+                reason: UnableToDecryptReason::MalformedEncryptedEvent,
+            },
         );
+        let mapped = map_history([utd.raw()], own).unwrap();
+        assert_eq!(mapped, map_history([&encrypted], own).unwrap());
+        assert_eq!(mapped.len(), 1);
+        assert_eq!(mapped[0].id, "$encrypted");
+        assert_eq!(mapped[0].sender_id, own.as_str());
+        assert_eq!(mapped[0].timestamp_ms, 42);
+        assert!(mapped[0].is_own);
         assert_eq!(
-            ensure_unencrypted(matrix_sdk::EncryptionState::Unknown),
-            Err(MessageHistoryError::History)
+            mapped[0].body,
+            "Não foi possível descriptografar esta mensagem."
         );
-        assert_eq!(
-            ensure_unencrypted(matrix_sdk::EncryptionState::NotEncrypted),
-            Ok(())
-        );
-        let encrypted =
-            Raw::from_json_string(r#"{"type":"m.room.encrypted","content":{}}"#.into()).unwrap();
-        assert_eq!(
-            map_history([&encrypted], user_id!("@me:example.org")),
-            Err(MessageHistoryError::EncryptionUnsupported)
-        );
-        assert!(map_history([], user_id!("@me:example.org"))
-            .unwrap()
-            .is_empty());
+        let malformed = Raw::from_json_string(
+            r#"{"type":"m.room.encrypted","content":{"ciphertext":"NEVER_FORWARD"}}"#.into(),
+        )
+        .unwrap();
+        assert!(map_history([&malformed], own).unwrap().is_empty());
     }
 
     #[tokio::test]

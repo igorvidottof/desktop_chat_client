@@ -78,9 +78,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
       return;
     }
     final message = update.message;
-    if (update.kind != MatrixUpdateKind.message ||
-        message == null ||
-        _error == MessageHistoryError.encryptionUnsupported) {
+    if (update.kind != MatrixUpdateKind.message || message == null) {
       return;
     }
     if (_loading) {
@@ -134,9 +132,7 @@ class _ConversationScreenState extends State<ConversationScreen> {
       if (!mounted || !widget.sessionActive.value) return;
       setState(() {
         _sendError = error;
-        if (error == SendMessageError.encryptionUnsupported) {
-          _error = MessageHistoryError.encryptionUnsupported;
-        } else if (error == SendMessageError.notAuthenticated) {
+        if (error == SendMessageError.notAuthenticated) {
           _error = MessageHistoryError.notAuthenticated;
         }
       });
@@ -189,10 +185,6 @@ class _ConversationScreenState extends State<ConversationScreen> {
       if (!mounted || !widget.sessionActive.value) return;
       setState(() {
         _error = error;
-        if (error == MessageHistoryError.encryptionUnsupported) {
-          _messages = const [];
-          _duringLoad.clear();
-        }
       });
     } catch (_) {
       if (!mounted || !widget.sessionActive.value) return;
@@ -404,7 +396,7 @@ String messageHistoryErrorMessage(MessageHistoryError error) => switch (error) {
   MessageHistoryError.conversationNotJoined =>
     'Você não participa desta conversa.',
   MessageHistoryError.encryptionUnsupported =>
-    'Conversas criptografadas ainda não são suportadas.',
+    'Não foi possível concluir a operação. Tente novamente.',
   MessageHistoryError.network =>
     'Não foi possível carregar as mensagens. Verifique a conexão.',
   MessageHistoryError.tls =>
@@ -423,7 +415,7 @@ String sendMessageErrorMessage(SendMessageError error) => switch (error) {
   SendMessageError.conversationNotJoined =>
     'Você não participa desta conversa.',
   SendMessageError.encryptionUnsupported =>
-    'Conversas criptografadas ainda não são suportadas.',
+    'Não foi possível concluir a operação. Tente novamente.',
   SendMessageError.emptyMessage => 'Digite uma mensagem.',
   SendMessageError.messageTooLong => 'Máximo de 10.000 caracteres Unicode.',
   SendMessageError.sendInProgress =>
