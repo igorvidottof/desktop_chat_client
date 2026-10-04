@@ -8,7 +8,8 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 flutter_rust_bridge = "=2.13.0"
-matrix-sdk = { version = "=0.19.1", default-features = false, features = ["rustls-aws-lc-rs", "bundled-sqlite"] }
+matrix-sdk = { version = "=0.19.1", default-features = false, features = ["rustls-aws-lc-rs", "bundled-sqlite", "e2e-encryption"] }
+matrix-sdk-crypto = { version = "=0.19.1", default-features = false }
 rustls = { version = "0.23", default-features = false }
 url = "2.5"
 directories = "=6.0.0"

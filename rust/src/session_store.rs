@@ -100,6 +100,20 @@ fn sync_directory(path: &Path) -> Result<(), SessionError> {
 struct Manifest {
     version: u8,
     store_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    crypto: Option<CryptoLifecycle>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum CryptoLifecycle {
+    MigrationInProgress,
+    CryptoInitialized,
+}
+
+impl Manifest {
+    fn valid(&self) -> bool {
+        valid_id(&self.store_id) && matches!((self.version, self.crypto), (1, None) | (2, Some(_)))
+    }
 }
 
 // Serializamos o tipo oficial do SDK dentro do cofre do SO, não em arquivo JSON.
@@ -200,7 +214,7 @@ impl<S: Secrets> SessionStore<S> {
         };
         let manifest: Manifest =
             serde_json::from_slice(&bytes).map_err(|_| SessionError::CorruptedSession)?;
-        if manifest.version != 1 || !valid_id(&manifest.store_id) {
+        if !manifest.valid() {
             return Err(SessionError::CorruptedSession);
         }
         Ok(Some(manifest))
@@ -332,7 +346,7 @@ impl<S: Secrets> SessionStore<S> {
             Ok(bytes) => {
                 let manifest: Manifest =
                     serde_json::from_slice(&bytes).map_err(|_| SessionError::CorruptedSession)?;
-                if manifest.version != 1 || manifest.store_id != id {
+                if !manifest.valid() || manifest.store_id != id {
                     return Err(SessionError::CorruptedSession);
                 }
                 fs::remove_file(active).map_err(|_| SessionError::Persistence)?;
@@ -376,35 +390,85 @@ impl<S: Secrets> SessionStore<S> {
         Ok((id, passphrase, path))
     }
 
+    pub(crate) fn crypto_lifecycle(
+        &self,
+        id: &str,
+    ) -> Result<Option<CryptoLifecycle>, SessionError> {
+        let manifest = self
+            .active_manifest()?
+            .ok_or(SessionError::CorruptedSession)?;
+        if manifest.store_id != id {
+            return Err(SessionError::CorruptedSession);
+        }
+        Ok(manifest.crypto)
+    }
+
+    pub(crate) fn advance_crypto(
+        &self,
+        id: &str,
+        next: CryptoLifecycle,
+    ) -> Result<(), SessionError> {
+        let manifest = self
+            .active_manifest()?
+            .ok_or(SessionError::CorruptedSession)?;
+        if manifest.store_id != id
+            || !matches!(
+                (manifest.crypto, next),
+                (None, CryptoLifecycle::MigrationInProgress)
+                    | (
+                        Some(CryptoLifecycle::MigrationInProgress),
+                        CryptoLifecycle::CryptoInitialized
+                    )
+                    | (
+                        Some(CryptoLifecycle::CryptoInitialized),
+                        CryptoLifecycle::CryptoInitialized
+                    )
+            )
+        {
+            return Err(SessionError::CorruptedSession);
+        }
+        self.write_manifest(&Manifest {
+            version: 2,
+            store_id: id.into(),
+            crypto: Some(next),
+        })
+    }
+
+    #[cfg(test)]
     pub(crate) fn persist(&self, saved: &SavedSession) -> Result<(), SessionError> {
+        self.persist_with_crypto(saved, None)
+    }
+
+    pub(crate) fn persist_initialized(&self, saved: &SavedSession) -> Result<(), SessionError> {
+        self.persist_with_crypto(saved, Some(CryptoLifecycle::CryptoInitialized))
+    }
+
+    fn persist_with_crypto(
+        &self,
+        saved: &SavedSession,
+        crypto: Option<CryptoLifecycle>,
+    ) -> Result<(), SessionError> {
         let encoded =
             Zeroizing::new(serde_json::to_string(saved).map_err(|_| SessionError::Internal)?);
-        // O cofre precisa confirmar a gravação antes do ponto de publicação em disco.
-        // Órfãos de tentativas não publicadas ficam para limpeza futura; logout
-        // remove somente os recursos da sessão ativa, sem enumerar outras contas.
         self.secrets.write(&saved.store_id, &encoded)?;
-        let manifest = serde_json::to_vec(&Manifest {
-            version: 1,
+        self.write_manifest(&Manifest {
+            version: if crypto.is_some() { 2 } else { 1 },
             store_id: saved.store_id.clone(),
+            crypto,
         })
-        .map_err(|_| SessionError::Internal)?;
+    }
+
+    fn write_manifest(&self, manifest: &Manifest) -> Result<(), SessionError> {
+        let bytes = serde_json::to_vec(manifest).map_err(|_| SessionError::Internal)?;
         let pending = self.root.join(format!("pending-{}.json", random_hex(16)?));
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&pending)
-            .map_err(|_| SessionError::Persistence)?;
-        file.write_all(&manifest)
+        let mut file = fs::File::create_new(&pending).map_err(|_| SessionError::Persistence)?;
+        file.write_all(&bytes)
             .and_then(|_| file.sync_all())
             .map_err(|_| SessionError::Persistence)?;
         drop(file);
         fs::rename(pending, self.root.join("active-session.json"))
             .map_err(|_| SessionError::Persistence)?;
-        #[cfg(unix)]
-        fs::File::open(&self.root)
-            .and_then(|dir| dir.sync_all())
-            .map_err(|_| SessionError::Persistence)?;
-        Ok(())
+        sync_directory(&self.root)
     }
 }
 
@@ -994,15 +1058,656 @@ mod tests {
                     .any(|window| window == secret.as_bytes()));
             }
         }
-        // Verifica o fechamento real das três bases antes da exclusão da unidade
-        // de armazenamento; este teste continua isolado do cofre e da rede.
-        reopened.state_store().close().await.unwrap();
-        reopened.event_cache_store().close().await.unwrap();
-        reopened.media_store().close().await.unwrap();
+        // Supported SDK pause now closes the crypto store as well as state,
+        // event-cache and media stores. Production still defers directory deletion.
+        reopened.pause().await.unwrap();
         drop(reopened);
         fixture.0.remove_restoration(&saved.store_id).unwrap();
         fixture.0.remove_store(&saved.store_id).unwrap();
         assert!(fixture.0.load().unwrap().is_none());
         assert!(!path.exists());
+    }
+
+    use crate::crypto_lifecycle::{self, CryptoError, PublicIdentity};
+    use matrix_sdk_crypto::store::CryptoStore;
+
+    async fn migrate(
+        fixture: &Fixture,
+        saved: &SavedSession,
+    ) -> Result<PublicIdentity, SessionError> {
+        crypto_lifecycle::prepare_restoration(
+            &fixture.0.store_path(&saved.store_id)?,
+            &saved.store_id,
+            &saved.passphrase,
+            &saved.session.meta,
+            fixture.0.crypto_lifecycle(&saved.store_id)?,
+            |next| std::future::ready(fixture.0.advance_crypto(&saved.store_id, next)),
+        )
+        .await
+    }
+
+    async fn start_migration(fixture: &Fixture, saved: &SavedSession) {
+        fixture.0.persist(saved).unwrap();
+        assert!(crypto_lifecycle::preflight(
+            &fixture.0.store_path(&saved.store_id).unwrap(),
+            &saved.store_id,
+            &saved.passphrase,
+            &saved.session.meta,
+            None,
+        )
+        .await
+        .unwrap()
+        .is_none());
+        fixture
+            .0
+            .advance_crypto(&saved.store_id, CryptoLifecycle::MigrationInProgress)
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn legacy_migration_preserves_credentials_user_device_and_persists_account() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        let original_credential = fixture.0.secrets.read(&saved.store_id).unwrap().unwrap();
+        assert_eq!(fixture.0.crypto_lifecycle(&saved.store_id).unwrap(), None);
+        let identity = migrate(&fixture, &saved).await.unwrap();
+        assert_eq!(
+            fixture.0.crypto_lifecycle(&saved.store_id).unwrap(),
+            Some(CryptoLifecycle::CryptoInitialized)
+        );
+        let loaded = fixture.0.load().unwrap().unwrap();
+        assert!(loaded.session == saved.session);
+        assert!(loaded.passphrase == saved.passphrase);
+        assert!(*fixture.0.secrets.read(&saved.store_id).unwrap().unwrap() == *original_credential);
+        let restored = migrate(&fixture, &loaded).await.unwrap();
+        assert!(restored == identity);
+        let disk = crypto_lifecycle::persisted_identity(
+            &fixture.0.store_path(&saved.store_id).unwrap(),
+            &saved.passphrase,
+            &saved.session.meta,
+        )
+        .await
+        .unwrap();
+        assert!(disk == identity);
+    }
+
+    #[tokio::test]
+    async fn crash_before_marker_stays_legacy_and_can_begin_again() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        crypto_lifecycle::preflight(
+            &path,
+            &saved.store_id,
+            &saved.passphrase,
+            &saved.session.meta,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(fixture.0.crypto_lifecycle(&saved.store_id).unwrap(), None);
+        migrate(&fixture, &saved).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn interrupted_migration_without_account_resumes_only_original_empty_sdk_store() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        start_migration(&fixture, &saved).await;
+        migrate(&fixture, &saved).await.unwrap();
+        assert_eq!(
+            fixture.0.crypto_lifecycle(&saved.store_id).unwrap(),
+            Some(CryptoLifecycle::CryptoInitialized)
+        );
+    }
+
+    #[tokio::test]
+    async fn interrupted_migration_with_account_finalizes_without_replacing_keys() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        start_migration(&fixture, &saved).await;
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        let before =
+            crypto_lifecycle::initialize_migration(&path, &saved.passphrase, &saved.session.meta)
+                .await
+                .unwrap();
+        assert_eq!(
+            fixture.0.crypto_lifecycle(&saved.store_id).unwrap(),
+            Some(CryptoLifecycle::MigrationInProgress)
+        );
+        assert!(migrate(&fixture, &saved).await.unwrap() == before);
+    }
+
+    #[tokio::test]
+    async fn migration_marker_failure_cannot_initialize_account() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        let result = crypto_lifecycle::prepare_restoration(
+            &path,
+            &saved.store_id,
+            &saved.passphrase,
+            &saved.session.meta,
+            None,
+            |_| std::future::ready(Err(SessionError::Persistence)),
+        )
+        .await;
+        assert!(matches!(result, Err(SessionError::Persistence)));
+        let store = matrix_sdk::SqliteCryptoStore::open(&path, Some(&saved.passphrase))
+            .await
+            .unwrap();
+        assert!(store.load_account().await.unwrap().is_none());
+        store.close().await.unwrap();
+        assert_eq!(fixture.0.crypto_lifecycle(&saved.store_id).unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn final_marker_failure_keeps_account_and_safe_retry_finishes() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        start_migration(&fixture, &saved).await;
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        let result = crypto_lifecycle::prepare_restoration(
+            &path,
+            &saved.store_id,
+            &saved.passphrase,
+            &saved.session.meta,
+            Some(CryptoLifecycle::MigrationInProgress),
+            |_| std::future::ready(Err(SessionError::Persistence)),
+        )
+        .await;
+        assert!(matches!(result, Err(SessionError::Persistence)));
+        let persisted =
+            crypto_lifecycle::persisted_identity(&path, &saved.passphrase, &saved.session.meta)
+                .await
+                .unwrap();
+        assert!(migrate(&fixture, &saved).await.unwrap() == persisted);
+    }
+
+    #[tokio::test]
+    async fn initialized_missing_account_never_falls_back_to_legacy() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        start_migration(&fixture, &saved).await;
+        fixture
+            .0
+            .advance_crypto(&saved.store_id, CryptoLifecycle::CryptoInitialized)
+            .unwrap();
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        assert!(matches!(
+            crypto_lifecycle::preflight(
+                &path,
+                &saved.store_id,
+                &saved.passphrase,
+                &saved.session.meta,
+                Some(CryptoLifecycle::CryptoInitialized)
+            )
+            .await,
+            Err(CryptoError::MissingAccount)
+        ));
+        assert!(matches!(
+            migrate(&fixture, &saved).await,
+            Err(SessionError::CorruptedSession)
+        ));
+        assert_eq!(
+            fixture.0.crypto_lifecycle(&saved.store_id).unwrap(),
+            Some(CryptoLifecycle::CryptoInitialized)
+        );
+        assert!(fixture
+            .0
+            .advance_crypto(&saved.store_id, CryptoLifecycle::MigrationInProgress)
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn initialized_missing_database_fails_without_creating_it() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist_initialized(&saved).unwrap();
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        assert!(migrate(&fixture, &saved).await.is_err());
+        assert!(!path.join("matrix-sdk-crypto.sqlite3").exists());
+    }
+
+    #[tokio::test]
+    async fn mismatched_user_or_device_fails_initialized_and_interrupted_migration() {
+        for lifecycle in [
+            CryptoLifecycle::MigrationInProgress,
+            CryptoLifecycle::CryptoInitialized,
+        ] {
+            for wrong_user in [true, false] {
+                let fixture = Fixture::new();
+                let saved = fixture.saved();
+                start_migration(&fixture, &saved).await;
+                let path = fixture.0.store_path(&saved.store_id).unwrap();
+                let mut wrong = saved.session.meta.clone();
+                if wrong_user {
+                    wrong.user_id = owned_user_id!("@other:example.invalid");
+                } else {
+                    wrong.device_id = owned_device_id!("OTHER_DEVICE");
+                }
+                crypto_lifecycle::initialize_migration(&path, &saved.passphrase, &wrong)
+                    .await
+                    .unwrap();
+                if lifecycle == CryptoLifecycle::CryptoInitialized {
+                    fixture
+                        .0
+                        .advance_crypto(&saved.store_id, lifecycle)
+                        .unwrap();
+                }
+                assert!(matches!(
+                    crypto_lifecycle::preflight(
+                        &path,
+                        &saved.store_id,
+                        &saved.passphrase,
+                        &saved.session.meta,
+                        Some(lifecycle)
+                    )
+                    .await,
+                    Err(CryptoError::IdentityMismatch)
+                ));
+                assert!(migrate(&fixture, &saved).await.is_err());
+                assert_eq!(
+                    fixture.0.crypto_lifecycle(&saved.store_id).unwrap(),
+                    Some(lifecycle)
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_or_replaced_migration_store_cannot_resume() {
+        for replacement in [false, true] {
+            let fixture = Fixture::new();
+            let saved = fixture.saved();
+            start_migration(&fixture, &saved).await;
+            let path = fixture.0.store_path(&saved.store_id).unwrap();
+            fs::remove_dir_all(&path).unwrap();
+            fs::create_dir(&path).unwrap();
+            if replacement {
+                let store = matrix_sdk::SqliteCryptoStore::open(&path, Some(&saved.passphrase))
+                    .await
+                    .unwrap();
+                store.close().await.unwrap();
+            }
+            assert!(matches!(
+                crypto_lifecycle::preflight(
+                    &path,
+                    &saved.store_id,
+                    &saved.passphrase,
+                    &saved.session.meta,
+                    Some(CryptoLifecycle::MigrationInProgress)
+                )
+                .await,
+                Err(CryptoError::InterruptedMigration)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn device_record_without_account_is_ambiguous_and_fails() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        start_migration(&fixture, &saved).await;
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        // Official APIs reproduce the SDK's boundary between device and account
+        // persistence. No SDK tables or private account keys are manipulated.
+        let other_path = fixture.0.root.join("isolated-source");
+        crypto_lifecycle::initialize_migration(&other_path, &saved.passphrase, &saved.session.meta)
+            .await
+            .unwrap();
+        let source = matrix_sdk::SqliteCryptoStore::open(&other_path, Some(&saved.passphrase))
+            .await
+            .unwrap();
+        let device = source
+            .get_device(&saved.session.meta.user_id, &saved.session.meta.device_id)
+            .await
+            .unwrap()
+            .unwrap();
+        source.close().await.unwrap();
+        let store = matrix_sdk::SqliteCryptoStore::open(&path, Some(&saved.passphrase))
+            .await
+            .unwrap();
+        store
+            .save_changes(matrix_sdk_crypto::store::types::Changes {
+                devices: matrix_sdk_crypto::store::types::DeviceChanges {
+                    new: vec![device],
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        store.close().await.unwrap();
+        assert!(matches!(
+            crypto_lifecycle::preflight(
+                &path,
+                &saved.store_id,
+                &saved.passphrase,
+                &saved.session.meta,
+                Some(CryptoLifecycle::MigrationInProgress)
+            )
+            .await,
+            Err(CryptoError::InterruptedMigration)
+        ));
+    }
+
+    #[tokio::test]
+    async fn corrupt_crypto_store_and_wrong_passphrase_fail_without_final_marker() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        start_migration(&fixture, &saved).await;
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        assert!(matches!(
+            crypto_lifecycle::preflight(
+                &path,
+                &saved.store_id,
+                "synthetic-wrong-passphrase",
+                &saved.session.meta,
+                Some(CryptoLifecycle::MigrationInProgress)
+            )
+            .await,
+            Err(CryptoError::UnsupportedStore)
+        ));
+        fs::write(
+            path.join("matrix-sdk-crypto.sqlite3"),
+            b"synthetic corrupted database",
+        )
+        .unwrap();
+        assert!(migrate(&fixture, &saved).await.is_err());
+        assert_eq!(
+            fixture.0.crypto_lifecycle(&saved.store_id).unwrap(),
+            Some(CryptoLifecycle::MigrationInProgress)
+        );
+    }
+
+    #[tokio::test]
+    async fn new_session_publication_requires_persisted_matching_account() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        let finalize = || std::future::ready(fixture.0.persist_initialized(&saved));
+        assert!(crypto_lifecycle::finalize_login(
+            &path,
+            &saved.passphrase,
+            &saved.session.meta,
+            finalize
+        )
+        .await
+        .is_err());
+        assert!(fixture.0.load().unwrap().is_none());
+        assert!(fixture.0.secrets.read(&saved.store_id).unwrap().is_none());
+        crypto_lifecycle::initialize_migration(&path, &saved.passphrase, &saved.session.meta)
+            .await
+            .unwrap();
+        let mut wrong = saved.session.meta.clone();
+        wrong.device_id = owned_device_id!("OTHER_DEVICE");
+        assert!(
+            crypto_lifecycle::finalize_login(&path, &saved.passphrase, &wrong, finalize)
+                .await
+                .is_err()
+        );
+        assert!(fixture.0.load().unwrap().is_none());
+        fixture.0.secrets.fail_write.set(true);
+        assert!(crypto_lifecycle::finalize_login(
+            &path,
+            &saved.passphrase,
+            &saved.session.meta,
+            finalize
+        )
+        .await
+        .is_err());
+        assert!(fixture.0.load().unwrap().is_none());
+        fixture.0.secrets.fail_write.set(false);
+        crypto_lifecycle::finalize_login(&path, &saved.passphrase, &saved.session.meta, finalize)
+            .await
+            .unwrap();
+        assert_eq!(
+            fixture.0.crypto_lifecycle(&saved.store_id).unwrap(),
+            Some(CryptoLifecycle::CryptoInitialized)
+        );
+    }
+
+    #[tokio::test]
+    async fn e2ee_logout_defers_and_restart_removes_entire_sdk_crypto_directory() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        migrate(&fixture, &saved).await.unwrap();
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        assert!(path.join("matrix-sdk-crypto.sqlite3").is_file());
+        fixture.0.remove_restoration(&saved.store_id).unwrap();
+        assert!(fixture.0.load().unwrap().is_none());
+        assert!(path.join("matrix-sdk-crypto.sqlite3").is_file());
+        assert_eq!(restart_cleanup(&fixture), 0);
+        assert!(!path.exists());
+        assert!(!fixture.0.cleanup_path(&saved.store_id).unwrap().exists());
+    }
+
+    #[tokio::test]
+    async fn migration_manifest_and_cleanup_metadata_contain_only_non_secret_state() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        migrate(&fixture, &saved).await.unwrap();
+        let bytes = fs::read(fixture.0.root.join("active-session.json")).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value.as_object().unwrap().len(), 3);
+        assert_eq!(value["version"], 2);
+        assert_eq!(value["crypto"], "CryptoInitialized");
+        fixture.0.record_cleanup(&saved.store_id).unwrap();
+        let cleanup = fs::read(fixture.0.cleanup_path(&saved.store_id).unwrap()).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&cleanup)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .len(),
+            2
+        );
+        for bytes in [&bytes, &cleanup] {
+            for secret in [&saved.passphrase, &saved.session.tokens.access_token] {
+                assert!(!bytes
+                    .windows(secret.len())
+                    .any(|window| window == secret.as_bytes()));
+            }
+        }
+        assert!(fixture
+            .0
+            .crypto_lifecycle("00000000000000000000000000000000")
+            .is_err());
+        fs::write(
+            fixture.0.root.join("active-session.json"),
+            format!(r#"{{"version":2,"store_id":"{}"}}"#, saved.store_id),
+        )
+        .unwrap();
+        assert!(fixture.0.load().is_err());
+    }
+
+    #[tokio::test]
+    async fn crypto_restart_process_probe() {
+        let Some(path) = std::env::var_os("MATRIX_CRYPTO_TEST_PATH") else {
+            return;
+        };
+        let path = PathBuf::from(path);
+        let meta = sample_session().meta;
+        let passphrase = "synthetic-isolated-test-passphrase";
+        let before = crypto_lifecycle::persisted_identity(&path, passphrase, &meta)
+            .await
+            .unwrap();
+        let client =
+            matrix::client_builder(matrix::validate_address("https://example.invalid").unwrap())
+                .unwrap()
+                .sqlite_store(&path, Some(passphrase))
+                .build()
+                .await
+                .unwrap();
+        client
+            .matrix_auth()
+            .restore_session(
+                sample_session(),
+                matrix_sdk::store::RoomLoadSettings::default(),
+            )
+            .await
+            .unwrap();
+        let after = crypto_lifecycle::persisted_identity(&path, passphrase, &meta)
+            .await
+            .unwrap();
+        assert!(before == after);
+        assert!(client.user_id() == Some(&meta.user_id));
+        assert!(client.device_id() == Some(&meta.device_id));
+        client.pause().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn full_native_process_restart_restores_identical_public_crypto_identity() {
+        let fixture = Fixture::new();
+        let path = fixture.0.root.join("process-store");
+        let passphrase = "synthetic-isolated-test-passphrase";
+        let meta = sample_session().meta;
+        let before = crypto_lifecycle::initialize_migration(&path, passphrase, &meta)
+            .await
+            .unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "session_store::tests::crypto_restart_process_probe",
+                "--exact",
+            ])
+            .env("MATRIX_CRYPTO_TEST_PATH", &path)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "isolated restart probe failed");
+        let after = crypto_lifecycle::persisted_identity(&path, passphrase, &meta)
+            .await
+            .unwrap();
+        assert!(before == after);
+    }
+
+    #[tokio::test]
+    async fn official_sdk_new_login_persists_crypto_before_session_publication() {
+        use std::io::Read;
+        // A single local mock response exercises the official login setter,
+        // without credentials or a live Matrix homeserver.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        let client = matrix_sdk::Client::builder()
+            .homeserver_url(format!("http://{address}"))
+            .server_versions([matrix_sdk::ruma::api::MatrixVersion::V1_0])
+            .respect_login_well_known(false)
+            .sqlite_store(&path, Some(&saved.passphrase))
+            .build()
+            .await
+            .unwrap();
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                            && std::time::Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(5))
+                    }
+                    _ => panic!("isolated login mock failed"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+                if request.ends_with(b"\r\n\r\n") {
+                    break;
+                }
+                assert!(request.len() < 16_384);
+            }
+            assert!(request.starts_with(b"POST /_matrix/client/"));
+            let headers = String::from_utf8(request).unwrap();
+            let length: usize = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse().unwrap())
+                })
+                .unwrap();
+            let mut body = zeroize::Zeroizing::new(vec![0; length]);
+            stream.read_exact(&mut body).unwrap();
+            let response = br#"{"user_id":"@fixture:example.invalid","device_id":"SYNTHETIC_DEVICE","access_token":"non-production-synthetic-token"}"#;
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", response.len()).unwrap();
+            stream.write_all(response).unwrap();
+        });
+        client
+            .matrix_auth()
+            .login_username("fixture", "synthetic-test-password")
+            .send()
+            .await
+            .unwrap();
+        server.join().unwrap();
+        assert!(fixture.0.load().unwrap().is_none());
+        assert!(client.matrix_auth().session().unwrap() == saved.session);
+        crypto_lifecycle::finalize_login(&path, &saved.passphrase, &saved.session.meta, || {
+            std::future::ready(fixture.0.persist_initialized(&saved))
+        })
+        .await
+        .unwrap();
+        let before =
+            crypto_lifecycle::persisted_identity(&path, &saved.passphrase, &saved.session.meta)
+                .await
+                .unwrap();
+        client.pause().await.unwrap();
+        drop(client);
+        assert!(migrate(&fixture, &saved).await.unwrap() == before);
+    }
+
+    #[tokio::test]
+    async fn migration_witness_cannot_be_confused_with_another_session_store() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        start_migration(&fixture, &saved).await;
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        crypto_lifecycle::initialize_migration(&path, &saved.passphrase, &saved.session.meta)
+            .await
+            .unwrap();
+        let store = matrix_sdk::SqliteCryptoStore::open(&path, Some(&saved.passphrase))
+            .await
+            .unwrap();
+        store
+            .set_custom_value(
+                "desktop_chat_client.crypto-migration.v1",
+                b"other-store".to_vec(),
+            )
+            .await
+            .unwrap();
+        store.close().await.unwrap();
+        assert!(migrate(&fixture, &saved).await.is_err());
+        assert_eq!(
+            fixture.0.crypto_lifecycle(&saved.store_id).unwrap(),
+            Some(CryptoLifecycle::MigrationInProgress)
+        );
+    }
+
+    #[tokio::test]
+    async fn legacy_manifest_with_existing_crypto_account_is_not_migration_authority() {
+        let fixture = Fixture::new();
+        let saved = fixture.saved();
+        fixture.0.persist(&saved).unwrap();
+        let path = fixture.0.store_path(&saved.store_id).unwrap();
+        crypto_lifecycle::initialize_migration(&path, &saved.passphrase, &saved.session.meta)
+            .await
+            .unwrap();
+        assert!(migrate(&fixture, &saved).await.is_err());
+        assert_eq!(fixture.0.crypto_lifecycle(&saved.store_id).unwrap(), None);
     }
 }

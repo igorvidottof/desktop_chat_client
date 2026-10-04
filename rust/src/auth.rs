@@ -7,7 +7,7 @@ use crate::{
         AccountSummary, ConversationError, LoginError, LogoutError, LogoutResult, ProbeError,
         RemoteLogoutStatus, SessionError, SessionState,
     },
-    matrix,
+    crypto_lifecycle, matrix,
     session_store::{self, SavedSession, SessionStore},
 };
 
@@ -361,7 +361,7 @@ async fn login_reserved(
                     .map_err(map_persistence_error)?;
             let client = matrix::client_builder(url)
                 .map_err(map_probe_error)?
-                .sqlite_store(path, Some(&passphrase))
+                .sqlite_store(&path, Some(&passphrase))
                 .build()
                 .await
                 .map_err(|_| LoginError::Persistence)?;
@@ -390,11 +390,15 @@ async fn login_reserved(
                 passphrase.to_string(),
                 session,
             );
-            // Só publicamos após confirmar persistência. Falha descarta o candidato;
-            // uma gravação de resultado incerto pode ser recuperada por initialize.
-            session_store::blocking(move || SessionStore::platform()?.persist(&saved))
-                .await
-                .map_err(map_persistence_error)?;
+            // Publication cannot run until the official disk account matches.
+            let meta = saved.session.meta.clone();
+            crypto_lifecycle::finalize_login(&path, &passphrase, &meta, || {
+                session_store::blocking(move || {
+                    SessionStore::platform()?.persist_initialized(&saved)
+                })
+            })
+            .await
+            .map_err(map_persistence_error)?;
             Ok((
                 AuthenticatedClient {
                     client,
@@ -446,17 +450,34 @@ async fn initialize_reserved() -> Result<SessionState, SessionError> {
                 Ok(path)
             })
             .await?;
+            let lifecycle_id = id.clone();
+            let lifecycle = session_store::blocking(move || {
+                SessionStore::platform()?.crypto_lifecycle(&lifecycle_id)
+            })
+            .await?;
+            let expected = crypto_lifecycle::prepare_restoration(
+                &path,
+                &id,
+                &saved.passphrase,
+                &saved.session.meta,
+                lifecycle,
+                |next| {
+                    let marker_id = id.clone();
+                    session_store::blocking(move || {
+                        SessionStore::platform()?.advance_crypto(&marker_id, next)
+                    })
+                },
+            )
+            .await?;
             let url = matrix::validate_address(&saved.homeserver)
                 .map_err(|_| SessionError::CorruptedSession)?;
             let client = matrix::client_builder(url)
                 .map_err(|_| SessionError::Internal)?
-                .sqlite_store(path, Some(&saved.passphrase))
+                .sqlite_store(&path, Some(&saved.passphrase))
                 .build()
                 .await
                 .map_err(|_| SessionError::CorruptedSession)?;
             // restore_session instala estado local do SDK; não verifica revogação remota.
-            // O mesmo device/store/passphrase permite habilitar crypto-store depois,
-            // sem inventar cache concorrente ou recriar a identidade do dispositivo.
             client
                 .matrix_auth()
                 .restore_session(
@@ -465,6 +486,12 @@ async fn initialize_reserved() -> Result<SessionState, SessionError> {
                 )
                 .await
                 .map_err(|_| SessionError::CorruptedSession)?;
+            let after =
+                crypto_lifecycle::persisted_identity(&path, &saved.passphrase, &saved.session.meta)
+                    .await?;
+            if after != expected {
+                return Err(SessionError::CorruptedSession);
+            }
             let identity = client
                 .whoami()
                 .await
@@ -545,6 +572,9 @@ fn map_probe_error(error: ProbeError) -> LoginError {
 fn map_sdk_error(error: matrix_sdk::Error) -> LoginError {
     match error {
         matrix_sdk::Error::Http(error) => map_http_error(*error),
+        matrix_sdk::Error::CryptoStoreError(_)
+        | matrix_sdk::Error::OlmError(_)
+        | matrix_sdk::Error::BadCryptoStoreState => LoginError::Persistence,
         _ => LoginError::Internal,
     }
 }
