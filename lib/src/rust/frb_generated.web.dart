@@ -78,6 +78,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RemoteLogoutStatus dco_decode_remote_logout_status(dynamic raw);
 
   @protected
+  SendMessageError dco_decode_send_message_error(dynamic raw);
+
+  @protected
+  SendMessageResult dco_decode_send_message_result(dynamic raw);
+
+  @protected
   ServerInfo dco_decode_server_info(dynamic raw);
 
   @protected
@@ -157,6 +163,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   RemoteLogoutStatus sse_decode_remote_logout_status(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  SendMessageError sse_decode_send_message_error(SseDeserializer deserializer);
+
+  @protected
+  SendMessageResult sse_decode_send_message_result(
     SseDeserializer deserializer,
   );
 
@@ -259,6 +273,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_remote_logout_status(
     RemoteLogoutStatus self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_send_message_error(
+    SendMessageError self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_send_message_result(
+    SendMessageResult self,
     SseSerializer serializer,
   );
 

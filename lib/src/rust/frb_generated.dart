@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 659357372;
+  int get rustContentHash => -406784642;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -93,6 +93,11 @@ abstract class RustLibApi extends BaseApi {
   Future<LogoutResult> crateApiSimpleLogout();
 
   Future<ServerInfo> crateApiSimpleProbeServer({required String address});
+
+  Future<SendMessageResult> crateApiSimpleSendTextMessage({
+    required String conversationId,
+    required String body,
+  });
 }
 
 class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
@@ -281,6 +286,41 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiSimpleProbeServerConstMeta =>
       const TaskConstMeta(debugName: "probe_server", argNames: ["address"]);
 
+  @override
+  Future<SendMessageResult> crateApiSimpleSendTextMessage({
+    required String conversationId,
+    required String body,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(conversationId, serializer);
+          sse_encode_String(body, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 7,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_send_message_result,
+          decodeErrorData: sse_decode_send_message_error,
+        ),
+        constMeta: kCrateApiSimpleSendTextMessageConstMeta,
+        argValues: [conversationId, body],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiSimpleSendTextMessageConstMeta =>
+      const TaskConstMeta(
+        debugName: "send_text_message",
+        argNames: ["conversationId", "body"],
+      );
+
   @protected
   String dco_decode_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
@@ -421,6 +461,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   RemoteLogoutStatus dco_decode_remote_logout_status(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return RemoteLogoutStatus.values[raw as int];
+  }
+
+  @protected
+  SendMessageError dco_decode_send_message_error(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return SendMessageError.values[raw as int];
+  }
+
+  @protected
+  SendMessageResult dco_decode_send_message_result(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 1)
+      throw Exception('unexpected arr length: expect 1 but see ${arr.length}');
+    return SendMessageResult(eventId: dco_decode_String(arr[0]));
   }
 
   @protected
@@ -639,6 +694,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  SendMessageError sse_decode_send_message_error(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return SendMessageError.values[inner];
+  }
+
+  @protected
+  SendMessageResult sse_decode_send_message_result(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_eventId = sse_decode_String(deserializer);
+    return SendMessageResult(eventId: var_eventId);
+  }
+
+  @protected
   ServerInfo sse_decode_server_info(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_serverAddress = sse_decode_String(deserializer);
@@ -833,6 +904,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_send_message_error(
+    SendMessageError self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_send_message_result(
+    SendMessageResult self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.eventId, serializer);
   }
 
   @protected

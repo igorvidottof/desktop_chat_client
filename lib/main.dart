@@ -44,6 +44,7 @@ class MyApp extends StatelessWidget {
     required this.authenticate,
     required this.loadConversations,
     this.loadHistory = loadMessageHistory,
+    this.sendMessage = sendTextMessage,
   });
 
   final SessionInitializer initialize;
@@ -52,6 +53,7 @@ class MyApp extends StatelessWidget {
   final PasswordLogin authenticate;
   final ConversationLoader loadConversations;
   final MessageHistoryLoader loadHistory;
+  final TextMessageSender sendMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +69,7 @@ class MyApp extends StatelessWidget {
         authenticate: authenticate,
         loadConversations: loadConversations,
         loadHistory: loadHistory,
+        sendMessage: sendMessage,
       ),
     );
   }
@@ -81,6 +84,7 @@ class LoginScreen extends StatefulWidget {
     required this.authenticate,
     required this.loadConversations,
     required this.loadHistory,
+    this.sendMessage = sendTextMessage,
   });
 
   final SessionInitializer initialize;
@@ -89,6 +93,7 @@ class LoginScreen extends StatefulWidget {
   final PasswordLogin authenticate;
   final ConversationLoader loadConversations;
   final MessageHistoryLoader loadHistory;
+  final TextMessageSender sendMessage;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -376,6 +381,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ConversationList(
                       load: widget.loadConversations,
                       loadHistory: widget.loadHistory,
+                      sendMessage: widget.sendMessage,
                     ),
                 ],
                 if (_logoutError case final error?)

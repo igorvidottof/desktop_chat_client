@@ -6,7 +6,7 @@
 import '../frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Consulta os métodos de acesso sem autenticar ou reter um cliente global.
 Future<ServerInfo> probeServer({required String address}) =>
@@ -39,6 +39,15 @@ Future<List<MessageSummary>> loadMessageHistory({
   required String conversationId,
 }) => RustLib.instance.api.crateApiSimpleLoadMessageHistory(
   conversationId: conversationId,
+);
+
+/// Envia texto literal; a tarefa nativa finita sobrevive ao cancelamento do await.
+Future<SendMessageResult> sendTextMessage({
+  required String conversationId,
+  required String body,
+}) => RustLib.instance.api.crateApiSimpleSendTextMessage(
+  conversationId: conversationId,
+  body: body,
 );
 
 /// Projeção pública da conta; a sessão e seus segredos permanecem no SDK em Rust.
@@ -213,6 +222,40 @@ enum RemoteLogoutStatus {
   rateLimited,
   server,
   internal,
+}
+
+/// Falhas fixas; uma falha de transporte pode deixar a aceitação remota incerta.
+enum SendMessageError {
+  notAuthenticated,
+  invalidConversationId,
+  conversationNotFound,
+  conversationNotJoined,
+  encryptionUnsupported,
+  emptyMessage,
+  messageTooLong,
+  sendInProgress,
+  network,
+  tls,
+  rateLimited,
+  send,
+  internal,
+}
+
+/// Confirmação do servidor; o envio não fornece origin_server_ts nem evento completo.
+class SendMessageResult {
+  final String eventId;
+
+  const SendMessageResult({required this.eventId});
+
+  @override
+  int get hashCode => eventId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SendMessageResult &&
+          runtimeType == other.runtimeType &&
+          eventId == other.eventId;
 }
 
 /// Informações da aplicação obtidas somente após uma resposta Matrix válida.

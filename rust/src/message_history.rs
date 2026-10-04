@@ -56,7 +56,7 @@ pub(crate) async fn load(id: &str) -> Result<Vec<MessageSummary>, MessageHistory
     result
 }
 
-fn resolve_room(client: &Client, id: &str) -> Result<Room, MessageHistoryError> {
+pub(crate) fn resolve_room(client: &Client, id: &str) -> Result<Room, MessageHistoryError> {
     // Flutter não é uma fronteira confiável: validar novamente antes de consultar o SDK.
     let id = RoomId::parse(id).map_err(|_| MessageHistoryError::InvalidConversationId)?;
     let room = client
@@ -66,7 +66,7 @@ fn resolve_room(client: &Client, id: &str) -> Result<Room, MessageHistoryError> 
     Ok(room)
 }
 
-fn ensure_joined(state: RoomState) -> Result<(), MessageHistoryError> {
+pub(crate) fn ensure_joined(state: RoomState) -> Result<(), MessageHistoryError> {
     if state == RoomState::Joined {
         Ok(())
     } else {
@@ -74,7 +74,9 @@ fn ensure_joined(state: RoomState) -> Result<(), MessageHistoryError> {
     }
 }
 
-fn ensure_unencrypted(state: matrix_sdk::EncryptionState) -> Result<(), MessageHistoryError> {
+pub(crate) fn ensure_unencrypted(
+    state: matrix_sdk::EncryptionState,
+) -> Result<(), MessageHistoryError> {
     if state.is_encrypted() {
         Err(MessageHistoryError::EncryptionUnsupported)
     } else if state.is_unknown() {
@@ -137,7 +139,7 @@ fn map_auth_error(error: ConversationError) -> MessageHistoryError {
     }
 }
 
-fn map_sdk_error(error: matrix_sdk::Error) -> MessageHistoryError {
+pub(crate) fn map_sdk_error(error: matrix_sdk::Error) -> MessageHistoryError {
     match error {
         matrix_sdk::Error::AuthenticationRequired => MessageHistoryError::NotAuthenticated,
         matrix_sdk::Error::Http(error) => map_http_error(&error),

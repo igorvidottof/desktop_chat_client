@@ -168,3 +168,35 @@ pub async fn load_message_history(
 ) -> Result<Vec<MessageSummary>, MessageHistoryError> {
     crate::message_history::load(&conversation_id).await
 }
+
+/// Confirmação do servidor; o envio não fornece origin_server_ts nem evento completo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SendMessageResult {
+    pub event_id: String,
+}
+
+/// Falhas fixas; uma falha de transporte pode deixar a aceitação remota incerta.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendMessageError {
+    NotAuthenticated,
+    InvalidConversationId,
+    ConversationNotFound,
+    ConversationNotJoined,
+    EncryptionUnsupported,
+    EmptyMessage,
+    MessageTooLong,
+    SendInProgress,
+    Network,
+    Tls,
+    RateLimited,
+    Send,
+    Internal,
+}
+
+/// Envia texto literal; a tarefa nativa finita sobrevive ao cancelamento do await.
+pub async fn send_text_message(
+    conversation_id: String,
+    body: String,
+) -> Result<SendMessageResult, SendMessageError> {
+    crate::message_send::send(conversation_id, body).await
+}

@@ -5,16 +5,27 @@ import 'src/rust/api/simple.dart';
 typedef MessageHistoryLoader =
     Future<List<MessageSummary>> Function({required String conversationId});
 
+typedef TextMessageSender =
+    Future<SendMessageResult> Function({
+      required String conversationId,
+      required String body,
+    });
+
+// Mesmo limite do Rust: valores escalares Unicode, não grafemas ou UTF-16.
+const maxMessageChars = 10000;
+
 class ConversationScreen extends StatefulWidget {
   const ConversationScreen({
     super.key,
     required this.conversation,
     required this.load,
     required this.sessionActive,
+    this.send = sendTextMessage,
   });
 
   final ConversationSummary conversation;
   final MessageHistoryLoader load;
+  final TextMessageSender send;
   final ValueNotifier<bool> sessionActive;
 
   @override
@@ -22,6 +33,11 @@ class ConversationScreen extends StatefulWidget {
 }
 
 class _ConversationScreenState extends State<ConversationScreen> {
+  final _composer = TextEditingController();
+  final _scroll = ScrollController();
+  bool _sending = false;
+  SendMessageError? _sendError;
+  String? _sentEventId;
   bool _loading = false;
   List<MessageSummary> _messages = const [];
   MessageHistoryError? _error;
@@ -30,7 +46,64 @@ class _ConversationScreenState extends State<ConversationScreen> {
   void initState() {
     super.initState();
     widget.sessionActive.addListener(_sessionChanged);
+    _composer.addListener(_textChanged);
     _load();
+  }
+
+  void _textChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _send() async {
+    if (_sending ||
+        _loading ||
+        _error != null ||
+        !widget.sessionActive.value ||
+        _composer.text.trim().isEmpty ||
+        _composer.text.runes.length > maxMessageChars) {
+      return;
+    }
+    final body = _composer.text;
+    setState(() {
+      _sending = true;
+      _sendError = null;
+      _sentEventId = null;
+    });
+    try {
+      final result = await widget.send(
+        conversationId: widget.conversation.id,
+        body: body,
+      );
+      if (!mounted || !widget.sessionActive.value) return;
+      // Confirmação separada do refresh: falha ao carregar não permite reenviar
+      // automaticamente uma mensagem já aceita. Nenhum timestamp é inventado.
+      _composer.clear();
+      setState(() => _sentEventId = result.eventId);
+      await _load();
+      if (!mounted || !widget.sessionActive.value) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.sessionActive.value && _scroll.hasClients) {
+          _scroll.jumpTo(_scroll.position.maxScrollExtent);
+        }
+      });
+    } on SendMessageError catch (error) {
+      if (!mounted || !widget.sessionActive.value) return;
+      setState(() {
+        _sendError = error;
+        if (error == SendMessageError.encryptionUnsupported) {
+          _error = MessageHistoryError.encryptionUnsupported;
+        } else if (error == SendMessageError.notAuthenticated) {
+          _error = MessageHistoryError.notAuthenticated;
+        }
+      });
+    } catch (_) {
+      if (!mounted || !widget.sessionActive.value) return;
+      setState(() => _sendError = SendMessageError.internal);
+    } finally {
+      if (mounted && widget.sessionActive.value) {
+        setState(() => _sending = false);
+      }
+    }
   }
 
   void _sessionChanged() {
@@ -40,6 +113,10 @@ class _ConversationScreenState extends State<ConversationScreen> {
       if (!mounted) return;
       setState(() {
         _messages = const [];
+        _composer.clear();
+        _sentEventId = null;
+        _sendError = null;
+        _sending = false;
         _loading = false;
         _error = MessageHistoryError.notAuthenticated;
       });
@@ -57,7 +134,13 @@ class _ConversationScreenState extends State<ConversationScreen> {
         conversationId: widget.conversation.id,
       );
       if (!mounted || !widget.sessionActive.value) return;
-      setState(() => _messages = List.unmodifiable(messages));
+      final seen = <String>{};
+      setState(
+        () =>
+            _messages = List.unmodifiable(
+              messages.where((message) => seen.add(message.id)),
+            ),
+      );
     } on MessageHistoryError catch (error) {
       if (!mounted || !widget.sessionActive.value) return;
       setState(() => _error = error);
@@ -74,6 +157,8 @@ class _ConversationScreenState extends State<ConversationScreen> {
   @override
   void dispose() {
     widget.sessionActive.removeListener(_sessionChanged);
+    _composer.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -81,69 +166,134 @@ class _ConversationScreenState extends State<ConversationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.conversation.displayName)),
-      body:
-          _loading
-              ? const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(),
-                    Text('Carregando mensagens…'),
-                  ],
-                ),
-              )
-              : _error != null
-              ? Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Semantics(
-                      liveRegion: true,
-                      child: Text(messageHistoryErrorMessage(_error!)),
-                    ),
-                    if (historyRetryable(_error!) && widget.sessionActive.value)
-                      FilledButton(
-                        onPressed: _load,
-                        child: const Text('Tentar novamente'),
-                      ),
-                  ],
-                ),
-              )
-              : _messages.isEmpty
-              ? const Center(child: Text('Nenhuma mensagem ainda.'))
-              : SelectionArea(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final message = _messages[index];
-                    return Align(
-                      key: ValueKey(message.id),
-                      alignment:
-                          message.isOwn
-                              ? Alignment.centerRight
-                              : Alignment.centerLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Column(
-                          crossAxisAlignment:
-                              message.isOwn
-                                  ? CrossAxisAlignment.end
-                                  : CrossAxisAlignment.start,
-                          children: [
-                            Text(message.senderId),
-                            // Conteúdo remoto permanece literal: sem HTML, Markdown ou links.
-                            Text(message.body),
-                            Text(messageTimestamp(message.timestampMs.toInt())),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
+      body: Column(
+        children: [
+          Expanded(child: _history()),
+          if (_sentEventId != null && widget.sessionActive.value)
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                _messages.any((message) => message.id == _sentEventId)
+                    ? 'Mensagem enviada.'
+                    : 'Mensagem enviada. Histórico ainda não atualizado.',
               ),
+            ),
+          if (_sentEventId != null &&
+              !_loading &&
+              _error == null &&
+              !_messages.any((message) => message.id == _sentEventId))
+            TextButton(
+              onPressed: _load,
+              child: const Text('Atualizar histórico'),
+            ),
+          if (_sendError != null && widget.sessionActive.value)
+            Semantics(
+              liveRegion: true,
+              child: Text(sendMessageErrorMessage(_sendError!)),
+            ),
+          if (!_loading && _error == null && widget.sessionActive.value)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _composer,
+                      enabled: !_sending,
+                      minLines: 1,
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        labelText: 'Mensagem',
+                        helperText:
+                            '${_composer.text.runes.length}/$maxMessageChars caracteres Unicode',
+                        errorText:
+                            _composer.text.runes.length > maxMessageChars
+                                ? 'Máximo de 10.000 caracteres Unicode.'
+                                : null,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton(
+                    onPressed:
+                        _sending ||
+                                _composer.text.trim().isEmpty ||
+                                _composer.text.runes.length > maxMessageChars
+                            ? null
+                            : _send,
+                    child: Text(_sending ? 'Enviando…' : 'Enviar'),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
+
+  Widget _history() =>
+      _loading
+          ? const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                Text('Carregando mensagens…'),
+              ],
+            ),
+          )
+          : _error != null
+          ? Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Semantics(
+                  liveRegion: true,
+                  child: Text(messageHistoryErrorMessage(_error!)),
+                ),
+                if (historyRetryable(_error!) && widget.sessionActive.value)
+                  FilledButton(
+                    onPressed: _load,
+                    child: const Text('Tentar novamente'),
+                  ),
+              ],
+            ),
+          )
+          : _messages.isEmpty
+          ? const Center(child: Text('Nenhuma mensagem ainda.'))
+          : SelectionArea(
+            child: ListView.builder(
+              controller: _scroll,
+              padding: const EdgeInsets.all(16),
+              itemCount: _messages.length,
+              itemBuilder: (context, index) {
+                final message = _messages[index];
+                return Align(
+                  key: ValueKey(message.id),
+                  alignment:
+                      message.isOwn
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Column(
+                      crossAxisAlignment:
+                          message.isOwn
+                              ? CrossAxisAlignment.end
+                              : CrossAxisAlignment.start,
+                      children: [
+                        Text(message.senderId),
+                        // Conteúdo remoto permanece literal: sem HTML, Markdown ou links.
+                        Text(message.body),
+                        Text(messageTimestamp(message.timestampMs.toInt())),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
 }
 
 String messageTimestamp(int milliseconds) {
@@ -181,4 +331,27 @@ String messageHistoryErrorMessage(MessageHistoryError error) => switch (error) {
     'O servidor limitou as solicitações. Aguarde antes de tentar novamente.',
   MessageHistoryError.history || MessageHistoryError.internal =>
     'Não foi possível carregar as mensagens. Tente novamente.',
+};
+
+String sendMessageErrorMessage(SendMessageError error) => switch (error) {
+  SendMessageError.notAuthenticated => 'A sessão não está mais autenticada.',
+  SendMessageError.invalidConversationId =>
+    'Identificador de conversa inválido.',
+  SendMessageError.conversationNotFound => 'Conversa não encontrada.',
+  SendMessageError.conversationNotJoined =>
+    'Você não participa desta conversa.',
+  SendMessageError.encryptionUnsupported =>
+    'Conversas criptografadas ainda não são suportadas.',
+  SendMessageError.emptyMessage => 'Digite uma mensagem.',
+  SendMessageError.messageTooLong => 'Máximo de 10.000 caracteres Unicode.',
+  SendMessageError.sendInProgress =>
+    'Já existe um envio em andamento nesta conversa.',
+  SendMessageError.rateLimited =>
+    'O servidor limitou os envios. Aguarde antes de enviar novamente.',
+  SendMessageError.network =>
+    'Não foi possível confirmar o envio. Verifique a conexão e o histórico antes de tentar novamente.',
+  SendMessageError.tls =>
+    'Não foi possível estabelecer uma conexão TLS segura. Verifique o histórico antes de tentar novamente.',
+  SendMessageError.send || SendMessageError.internal =>
+    'Não foi possível confirmar o envio. Verifique o histórico antes de tentar novamente.',
 };

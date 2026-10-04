@@ -10,10 +10,12 @@ class ConversationList extends StatefulWidget {
     super.key,
     required this.load,
     required this.loadHistory,
+    this.sendMessage = sendTextMessage,
   });
 
   final ConversationLoader load;
   final MessageHistoryLoader loadHistory;
+  final TextMessageSender sendMessage;
 
   @override
   State<ConversationList> createState() => _ConversationListState();
@@ -62,6 +64,7 @@ class _ConversationListState extends State<ConversationList> {
               (_) => ConversationScreen(
                 conversation: room,
                 load: widget.loadHistory,
+                send: widget.sendMessage,
                 sessionActive: active,
               ),
         ),
