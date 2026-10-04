@@ -113,7 +113,7 @@ void main() {
       expect(draft(tester), '');
       expect(loads, 2);
       expect(find.text(body), findsOneWidget);
-      expect(find.text('Mensagem enviada.'), findsOneWidget);
+      expect(find.text('Mensagem enviada.'), findsNothing);
       expect(
         tester.getTopLeft(find.text('Anterior')).dy,
         lessThan(tester.getTopLeft(find.text(body)).dy),
@@ -184,7 +184,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.text('Mensagem enviada. Histórico ainda não atualizado.'),
-        findsOneWidget,
+        findsNothing,
       );
       await tester.tap(find.text('Tentar novamente'));
       await tester.pumpAndSettle();
@@ -214,7 +214,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.text('Mensagem enviada. Histórico ainda não atualizado.'),
-        findsOneWidget,
+        findsNothing,
       );
       await tester.tap(find.text('Atualizar histórico'));
       await tester.pumpAndSettle();

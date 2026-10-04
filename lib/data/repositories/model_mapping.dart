@@ -8,7 +8,11 @@ domain.AccountSummary mapAccount(native.AccountSummary value) =>
       homeserverAddress: value.homeserverAddress,
     );
 domain.ConversationSummary mapRoom(native.ConversationSummary value) =>
-    domain.ConversationSummary(id: value.id, displayName: value.displayName);
+    domain.ConversationSummary(
+      id: value.id,
+      displayName: value.displayName,
+      unreadMessageCount: value.unreadMessageCount,
+    );
 domain.MessageSummary mapMessage(native.MessageSummary value) =>
     domain.MessageSummary(
       id: value.id,

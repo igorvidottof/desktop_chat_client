@@ -114,11 +114,17 @@ enum ConversationError {
 class ConversationSummary {
   final String id;
   final String displayName;
+  final int unreadMessageCount;
 
-  const ConversationSummary({required this.id, required this.displayName});
+  const ConversationSummary({
+    required this.id,
+    required this.displayName,
+    this.unreadMessageCount = 0,
+  });
 
   @override
-  int get hashCode => id.hashCode ^ displayName.hashCode;
+  int get hashCode =>
+      id.hashCode ^ displayName.hashCode ^ unreadMessageCount.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -126,7 +132,8 @@ class ConversationSummary {
       other is ConversationSummary &&
           runtimeType == other.runtimeType &&
           id == other.id &&
-          displayName == other.displayName;
+          displayName == other.displayName &&
+          unreadMessageCount == other.unreadMessageCount;
 }
 
 /// Falhas estáveis sem mensagens, respostas ou objetos de autenticação do SDK.

@@ -93,6 +93,7 @@ void main() {
               const native.ConversationSummary(
                 id: 'opaque',
                 displayName: '<Sala>',
+                unreadMessageCount: 12,
               ),
             ],
       ),
@@ -101,7 +102,11 @@ void main() {
     final rooms = await repository.load();
     expect(
       rooms.single,
-      const domain.ConversationSummary(id: 'opaque', displayName: '<Sala>'),
+      const domain.ConversationSummary(
+        id: 'opaque',
+        displayName: '<Sala>',
+        unreadMessageCount: 12,
+      ),
     );
     expect(() => rooms.clear(), throwsUnsupportedError);
     for (final error in native.ConversationError.values) {

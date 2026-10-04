@@ -530,11 +530,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ConversationSummary dco_decode_conversation_summary(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
     return ConversationSummary(
       id: dco_decode_String(arr[0]),
       displayName: dco_decode_String(arr[1]),
+      unreadMessageCount: dco_decode_u_32(arr[2]),
     );
   }
 
@@ -812,7 +813,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_id = sse_decode_String(deserializer);
     var var_displayName = sse_decode_String(deserializer);
-    return ConversationSummary(id: var_id, displayName: var_displayName);
+    var var_unreadMessageCount = sse_decode_u_32(deserializer);
+    return ConversationSummary(
+      id: var_id,
+      displayName: var_displayName,
+      unreadMessageCount: var_unreadMessageCount,
+    );
   }
 
   @protected
@@ -1150,6 +1156,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.id, serializer);
     sse_encode_String(self.displayName, serializer);
+    sse_encode_u_32(self.unreadMessageCount, serializer);
   }
 
   @protected

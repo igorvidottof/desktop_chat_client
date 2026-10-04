@@ -66,6 +66,21 @@ class RoomsView extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    trailing:
+                        room.unreadMessageCount > 0
+                            ? Semantics(
+                              label:
+                                  room.unreadMessageCount == 1
+                                      ? '1 mensagem não lida'
+                                      : '${room.unreadMessageCount} mensagens não lidas',
+                              child: ExcludeSemantics(
+                                child: Badge.count(
+                                  count: room.unreadMessageCount,
+                                  maxCount: 99,
+                                ),
+                              ),
+                            )
+                            : null,
                     onTap: () => viewModel.selectRoom(room),
                     focusColor: Theme.of(
                       context,

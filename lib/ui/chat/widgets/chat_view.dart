@@ -174,15 +174,6 @@ class _ChatViewState extends State<ChatView> {
             );
             return Column(
               children: [
-                if (state.$5 != null)
-                  Semantics(
-                    liveRegion: true,
-                    child: Text(
-                      state.$6
-                          ? 'Mensagem enviada.'
-                          : 'Mensagem enviada. Histórico ainda não atualizado.',
-                    ),
-                  ),
                 if (state.$5 != null &&
                     !state.$1 &&
                     state.$3 == null &&
@@ -207,7 +198,8 @@ class _ChatViewState extends State<ChatView> {
                             value.text.trim().isNotEmpty &&
                             value.text.runes.length <= maxMessageChars;
                         return Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
                           children: [
                             Expanded(
                               child: Focus(

@@ -170,6 +170,34 @@ impl SyncOwner {
 }
 
 async fn run(client: Client, hub: Arc<UpdateHub>) {
+    // O cache do SDK calcula as mensagens não lidas a partir do sync existente.
+    // Seu consumidor pertence ao cliente nativo, nunca ao transporte Dart.
+    let mut room_updates = client.room_info_notable_update_receiver();
+    if client.event_cache().subscribe().is_err() {
+        hub.status(MatrixSyncStatus::Reconnecting);
+        return;
+    }
+    let sync = run_with_keys(client, Arc::clone(&hub));
+    tokio::pin!(sync);
+    loop {
+        tokio::select! {
+            _ = &mut sync => return,
+            update = room_updates.recv() => {
+                match update {
+                    Ok(_) => {
+                        hub.emit(hub.update(MatrixUpdateKind::ConversationsChanged));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        hub.emit(hub.update(MatrixUpdateKind::ConversationsChanged));
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => { sync.await; return; }
+                }
+            }
+        }
+    }
+}
+
+async fn run_with_keys(client: Client, hub: Arc<UpdateHub>) {
     // Subscribe before the first sync so keys received by that sync cannot be
     // missed. This listener shares the sync owner's lifetime; it never syncs.
     let Some(keys) = client.encryption().room_keys_received_stream().await else {
@@ -314,6 +342,9 @@ fn publish_response(client: &Client, hub: &UpdateHub, response: &SyncResponse, i
         if room.is_space() {
             continue;
         }
+        // Recibos, dados da conta e mensagens podem alterar os contadores do SDK,
+        // inclusive quando a atualização não contém novas mensagens.
+        rooms_changed = true;
         let encryption_changed = state.iter().any(|e| {
             e.get_field::<String>("type").ok().flatten().as_deref() == Some("m.room.encryption")
         }) || update.timeline.events.iter().any(|e| {
@@ -346,7 +377,7 @@ fn publish_response(client: &Client, hub: &UpdateHub, response: &SyncResponse, i
             }
         }
     }
-    // Uma invalidação por lote; mensagens/presença/ephemeral não recarregam a lista.
+    // Uma invalidação por lote mantém nomes e contadores atualizados.
     if rooms_changed {
         hub.emit(hub.update(MatrixUpdateKind::ConversationsChanged));
     }
@@ -745,6 +776,10 @@ mod tests {
         assert_eq!(event.kind, MatrixUpdateKind::Message);
         assert_eq!(event.conversation_id.as_deref(), Some("!plain:example.org"));
         assert_eq!(event.message.unwrap().id, "$plain");
+        assert_eq!(
+            receiver.recv().await.unwrap().kind,
+            MatrixUpdateKind::ConversationsChanged
+        );
         assert!(receiver.try_recv().is_err());
         response
             .rooms
@@ -795,6 +830,33 @@ mod tests {
             "Não foi possível descriptografar esta mensagem."
         );
         assert_eq!(message.timestamp_ms, 456);
+        assert_eq!(
+            receiver.recv().await.unwrap().kind,
+            MatrixUpdateKind::ConversationsChanged
+        );
+        assert!(receiver.try_recv().is_err());
+
+        // Um lote sem mensagens também invalida os contadores após recibos de leitura.
+        let update = response
+            .rooms
+            .joined
+            .get_mut(room_id!("!encrypted:example.org"))
+            .unwrap();
+        update.timeline.events.clear();
+        update.ephemeral.push(
+            Raw::from_json_string(
+                json!({
+                    "type": "m.receipt", "content": {}
+                })
+                .to_string(),
+            )
+            .unwrap(),
+        );
+        publish_response(&client, &hub, &response, false);
+        assert_eq!(
+            receiver.recv().await.unwrap().kind,
+            MatrixUpdateKind::ConversationsChanged
+        );
         assert!(receiver.try_recv().is_err());
     }
 

@@ -56,10 +56,13 @@ pub async fn login(
 }
 
 /// Resumo de apresentação; o identificador é opaco para Flutter, sem tipos Matrix.
+#[flutter_rust_bridge::frb]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConversationSummary {
     pub id: String,
     pub display_name: String,
+    #[frb(default = 0)]
+    pub unread_message_count: u32,
 }
 
 /// Categorias seguras, sem respostas do servidor nem segredos da sessão.

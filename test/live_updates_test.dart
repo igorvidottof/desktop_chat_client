@@ -175,7 +175,7 @@ void main() {
     source.controller.add(update(message: message('own', 20, own: true)));
     await tester.pump();
     expect(find.text('own'), findsOneWidget);
-    expect(find.text('Mensagem enviada.'), findsOneWidget);
+    expect(find.text('Mensagem enviada.'), findsNothing);
     await tester.pumpWidget(const SizedBox());
     await source.dispose();
     active.dispose();
@@ -296,7 +296,7 @@ void main() {
       source.controller.add(update(message: own));
       await tester.pump();
       expect(find.text(own.body), findsOneWidget);
-      expect(find.text('Mensagem enviada.'), findsOneWidget);
+      expect(find.text('Mensagem enviada.'), findsNothing);
       await tester.pumpWidget(const SizedBox());
       await source.dispose();
       active.dispose();
