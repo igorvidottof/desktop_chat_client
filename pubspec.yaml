@@ -37,6 +37,7 @@ dependencies:
   flutter_rust_bridge: 2.13.0
   rust_lib_desktop_chat_client:
     path: rust_builder
+  get: ^4.7.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

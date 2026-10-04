@@ -1,8 +1,6 @@
 import 'dart:async';
 
-import 'package:desktop_chat_client/conversation_list.dart';
-import 'package:desktop_chat_client/conversation_screen.dart';
-import 'package:desktop_chat_client/matrix_updates.dart';
+import 'support/bridge_harness.dart';
 import 'package:desktop_chat_client/src/rust/api/simple.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,6 +34,8 @@ MatrixUpdate update({
 );
 
 class FakeSource implements MatrixUpdateSource {
+  @override
+  bool get initialRoomSyncPending => false;
   final controller = StreamController<MatrixUpdate>.broadcast(sync: true);
   bool disposed = false;
   @override
@@ -348,7 +348,7 @@ void main() {
       expect(find.text('visible'), findsOneWidget);
       expect(loads, 2);
       expect(factories, 1);
-      await tester.pageBack();
+      await tester.tap(find.byTooltip('Voltar às conversas'));
       await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox());
       await tester.pump();

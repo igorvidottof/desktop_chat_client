@@ -1,8 +1,6 @@
 import 'dart:async';
 
-import 'package:desktop_chat_client/main.dart';
-import 'package:desktop_chat_client/conversation_list.dart';
-import 'package:desktop_chat_client/conversation_screen.dart';
+import 'support/bridge_harness.dart';
 import 'package:desktop_chat_client/src/rust/api/simple.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,68 +32,75 @@ void main() {
   test('Timestamp fora do intervalo não derruba apresentação', () {
     expect(messageTimestamp(9007199254740991), 'Data indisponível');
   });
-  testWidgets('Seleção preserva ID, carregamento e lista ao voltar', (
-    tester,
-  ) async {
-    var roomCalls = 0;
-    String? received;
-    final pending = Completer<List<MessageSummary>>();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ConversationList(
-            load: () async {
-              roomCalls++;
-              return [room];
-            },
-            loadHistory: ({required conversationId}) {
-              received = conversationId;
-              return pending.future;
-            },
+  testWidgets(
+    'Seleção preserva ID, carregamento, timestamp e lista ao voltar',
+    (tester) async {
+      var roomCalls = 0;
+      String? received;
+      final pending = Completer<List<MessageSummary>>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ConversationList(
+              load: () async {
+                roomCalls++;
+                return [room];
+              },
+              loadHistory: ({required conversationId}) {
+                received = conversationId;
+                return pending.future;
+              },
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(room.displayName));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump();
-    expect(received, room.id);
-    expect(
-      find.descendant(
-        of: find.byType(ConversationScreen),
-        matching: find.text(room.displayName),
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Carregando mensagens…'), findsOneWidget);
-    pending.complete([
-      message('old', "<script>alert('test')</script>", false, 1000),
-      message('new', 'Mensagem 2', true, 2000),
-    ]);
-    await tester.pumpAndSettle();
-    expect(find.text("<script>alert('test')</script>"), findsOneWidget);
-    expect(find.text('@other:example.org'), findsOneWidget);
-    expect(find.text('@me:example.org'), findsOneWidget);
-    expect(find.text(messageTimestamp(1000)), findsOneWidget);
-    expect(
-      tester.getTopLeft(find.text("<script>alert('test')</script>")).dy,
-      lessThan(tester.getTopLeft(find.text('Mensagem 2')).dy),
-    );
-    expect(
-      tester.widget<Align>(find.byKey(const ValueKey('old'))).alignment,
-      Alignment.centerLeft,
-    );
-    expect(
-      tester.widget<Align>(find.byKey(const ValueKey('new'))).alignment,
-      Alignment.centerRight,
-    );
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    expect(find.text(room.displayName), findsOneWidget);
-    expect(roomCalls, 1);
-  });
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(room.displayName));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(received, room.id);
+      expect(
+        find.descendant(
+          of: find.byType(Scaffold),
+          matching: find.text(room.displayName),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Carregando mensagens…'), findsOneWidget);
+      pending.complete([
+        message('old', "<script>alert('test')</script>", false, 1000),
+        message('new', 'Mensagem 2', true, 2000),
+      ]);
+      await tester.pumpAndSettle();
+      expect(find.text("<script>alert('test')</script>"), findsOneWidget);
+      expect(find.text('@other:example.org'), findsOneWidget);
+      expect(find.text('@me:example.org'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('old')),
+          matching: find.text(messageTimestamp(1000)),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getTopLeft(find.text("<script>alert('test')</script>")).dy,
+        lessThan(tester.getTopLeft(find.text('Mensagem 2')).dy),
+      );
+      expect(
+        tester.widget<Align>(find.byKey(const ValueKey('old'))).alignment,
+        Alignment.centerLeft,
+      );
+      expect(
+        tester.widget<Align>(find.byKey(const ValueKey('new'))).alignment,
+        Alignment.centerRight,
+      );
+      await tester.tap(find.byTooltip('Voltar às conversas'));
+      await tester.pumpAndSettle();
+      expect(find.text(room.displayName), findsOneWidget);
+      expect(roomCalls, 1);
+    },
+  );
 
   testWidgets('Distingue vazio de carregamento', (tester) async {
     final active = ValueNotifier(true);
@@ -181,7 +186,7 @@ void main() {
   }
 
   testWidgets(
-    'Logout na aplicação invalida rota e novo login não aceita histórico antigo',
+    'Logout invalida conversa e novo login não aceita histórico antigo',
     (tester) async {
       final pending = Completer<List<MessageSummary>>();
       const account = AccountSummary(
@@ -190,7 +195,7 @@ void main() {
         homeserverAddress: 'https://example.invalid',
       );
       await tester.pumpWidget(
-        MyApp(
+        fixtureApp(
           initialize: () async => const SessionState(account: account),
           logoutAction:
               () async => const LogoutResult(
@@ -206,25 +211,18 @@ void main() {
       await tester.pumpAndSettle();
       final logout =
           tester
-              .widget<FilledButton>(find.widgetWithText(FilledButton, 'Logout'))
+              .widget<TextButton>(find.widgetWithText(TextButton, 'Logout'))
               .onPressed!;
       await tester.tap(find.text(room.displayName));
       await tester.pump();
-      // Simula logout por outro chamador enquanto a rota de histórico está aberta.
+      // Simula logout por outro chamador enquanto a conversa está aberta.
       logout();
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(
-        find.text(
-          messageHistoryErrorMessage(MessageHistoryError.notAuthenticated),
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('Entrar'), findsOneWidget);
       pending.complete([message('old', 'Conta anterior', true, 0)]);
       await tester.pumpAndSettle();
       expect(find.text('Conta anterior'), findsNothing);
-      await tester.pageBack();
-      await tester.pumpAndSettle();
       await tester.tap(find.text('Entrar'));
       await tester.pumpAndSettle();
       expect(find.text('Conta anterior'), findsNothing);

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:desktop_chat_client/main.dart';
+import 'support/bridge_harness.dart';
 import 'package:desktop_chat_client/src/rust/api/simple.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,7 +13,7 @@ const account = AccountSummary(
 
 Finder field(String label) => find.widgetWithText(TextField, label);
 
-Widget loginApp(PasswordLogin authenticate) => MyApp(
+Widget loginApp(PasswordLogin authenticate) => fixtureApp(
   logoutAction: () async => throw LogoutError.internal,
   initialize: () async => const SessionState(account: null),
   loadConversations: () async => [],
@@ -81,8 +81,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Conta autenticada'), findsOneWidget);
       expect(find.text(account.userId), findsOneWidget);
-      expect(find.text('Dispositivo: ${account.deviceId}'), findsOneWidget);
-      expect(find.text(account.homeserverAddress), findsOneWidget);
+      expect(
+        find.byTooltip(
+          'Dispositivo: ${account.deviceId}\n${account.homeserverAddress}',
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Entrar'), findsNothing);
       expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(controller.text, isEmpty);

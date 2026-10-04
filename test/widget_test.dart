@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:desktop_chat_client/main.dart';
+import 'support/bridge_harness.dart';
 import 'package:desktop_chat_client/src/rust/api/simple.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -109,7 +109,7 @@ void main() {
   });
 }
 
-Widget probeApp({required ServerProbe probe}) => MyApp(
+Widget probeApp({required ServerProbe probe}) => fixtureApp(
   logoutAction: () async => throw LogoutError.internal,
   initialize: () async => const SessionState(account: null),
   loadConversations: () async => [],

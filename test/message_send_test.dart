@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:desktop_chat_client/conversation_screen.dart';
+import 'support/bridge_harness.dart';
 import 'package:desktop_chat_client/src/rust/api/simple.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

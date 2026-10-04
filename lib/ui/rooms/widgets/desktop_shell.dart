@@ -1,0 +1,155 @@
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import '../view_models/rooms_view_model.dart';
+import '../../auth/view_models/auth_view_model.dart';
+import '../../../domain/models/models.dart';
+import '../../core/themes/layout_tokens.dart';
+import '../../core/ui/state_panel.dart';
+import '../../auth/widgets/failure_messages.dart';
+import 'rooms_view.dart';
+
+class DesktopShell extends StatelessWidget {
+  const DesktopShell({
+    super.key,
+    required this.auth,
+    required this.rooms,
+    required this.conversationBuilder,
+  });
+  final AuthViewModel auth;
+  final RoomsViewModel rooms;
+  final Widget Function(ConversationSummary) conversationBuilder;
+  @override
+  Widget build(BuildContext context) => GetBuilder<RoomsViewModel>(
+    init: rooms,
+    global: false,
+    autoRemove: false,
+    filter: (viewModel) => viewModel.state.selected ?? const Object(),
+    builder: (viewModel) {
+      final selected = viewModel.state.selected;
+      final account = auth.state.account;
+      final error = auth.state.logoutError;
+      return Scaffold(
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final narrow =
+                  constraints.maxWidth < LayoutTokens.desktopBreakpoint;
+              final sidebar = Material(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(LayoutTokens.padding),
+                      child: Text(
+                        'Conversas',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                    ),
+                    const Divider(),
+                    Expanded(child: RoomsView(viewModel: rooms)),
+                    const Divider(),
+                    Padding(
+                      padding: const EdgeInsets.all(LayoutTokens.gap),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Conta autenticada'),
+                          if (account != null) ...[
+                            Text(
+                              account.userId,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Tooltip(
+                              message:
+                                  'Dispositivo: ${account.deviceId}\n${account.homeserverAddress}',
+                              child: const Text(
+                                'Sessão Matrix',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ],
+                          if (error != null)
+                            Semantics(
+                              liveRegion: true,
+                              child: Text(logoutErrorMessage(error)),
+                            ),
+                          TextButton.icon(
+                            onPressed: auth.logout,
+                            icon: const Icon(Icons.logout, size: 18),
+                            label: const Text('Logout'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+              final conversation =
+                  selected == null
+                      ? const StatePanel(
+                        message: 'Selecione uma conversa',
+                        supporting:
+                            'Escolha uma sala na lista para ver as mensagens.',
+                        icon: Icons.forum_outlined,
+                      )
+                      : Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: LayoutTokens.gap,
+                              vertical: LayoutTokens.compact,
+                            ),
+                            child: Row(
+                              children: [
+                                if (narrow)
+                                  IconButton(
+                                    tooltip: 'Voltar às conversas',
+                                    onPressed: () => rooms.selectRoom(null),
+                                    icon: const Icon(Icons.arrow_back),
+                                  ),
+                                Expanded(
+                                  child: Text(
+                                    selected.displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style:
+                                        Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                ),
+                                if (narrow)
+                                  IconButton(
+                                    tooltip: 'Logout',
+                                    onPressed: auth.logout,
+                                    icon: const Icon(Icons.logout),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          if (narrow && error != null)
+                            Padding(
+                              padding: const EdgeInsets.all(
+                                LayoutTokens.compact,
+                              ),
+                              child: Text(logoutErrorMessage(error)),
+                            ),
+                          const Divider(),
+                          Expanded(child: conversationBuilder(selected)),
+                        ],
+                      );
+              if (narrow) return selected == null ? sidebar : conversation;
+              return Row(
+                children: [
+                  SizedBox(width: LayoutTokens.sidebarWidth, child: sidebar),
+                  const VerticalDivider(),
+                  Expanded(child: conversation),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+    },
+  );
+}

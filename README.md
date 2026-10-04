@@ -1,87 +1,72 @@
 # desktop_chat_client
 
-Minimal Flutter desktop / Rust connectivity through Flutter Rust Bridge 2.13.0.
-The app initializes `RustLib`, awaits Rust's `hello()` through generated Dart
-bindings, and displays the returned `Hello from Rust!` string. No Matrix SDK is
-included yet.
+Flutter desktop Matrix messenger with a Rust backend through Flutter Rust Bridge
+2.13.0. Existing flows include homeserver probing, password login, secure session
+restoration, joined rooms, bounded text history, sending, native live updates,
+E2EE message presentation, and cooperative logout with deferred native cleanup.
 
-## Toolchain
+## Setup
 
-Verified with Flutter 3.47.6 (Dart 3.13.5), Rust 1.99.0, and CocoaPods 1.17.0
-on Apple Silicon macOS.
-The Rust version and desktop targets are pinned in `rust/rust-toolchain.toml`.
-macOS requires working CocoaPods (Flutter recommends >= 1.16.2). This machine's
-old `/usr/local/bin/pod` is shadowing the repaired Homebrew install; put
-`/opt/homebrew/bin` first in PATH for builds and runs:
+The current Flutter toolchain is Flutter 3.47.6 / Dart 3.13.5. The native toolchain
+is pinned to Rust 1.99.0 in `rust/rust-toolchain.toml`. macOS requires Xcode and
+CocoaPods; the project uses the existing Cargokit/CocoaPods integration. On this
+machine, select the Homebrew CocoaPods installation when building:
 
 ```sh
 export PATH="/opt/homebrew/bin:$PATH"
-```
-
-Other desktop hosts need their normal Flutter and Rust native build toolchains.
-
-Install the matching official generator and resolve Dart dependencies:
-
-```sh
-cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked
 flutter pub get
+flutter run -d macos
 ```
 
-## Bindings and native build
+Linux and Windows require their respective Flutter desktop and Rust toolchains.
+Configured targets alone do not establish successful builds on those hosts.
 
-Edit the API in `rust/src/api/simple.rs`, then regenerate:
-
-```sh
-flutter_rust_bridge_codegen generate
-```
-
-`flutter_rust_bridge.yaml` selects `crate::api`, the `rust/` crate, and generated
-Dart output in `lib/src/rust/`. The generator writes the Dart API and platform
-bindings plus `rust/src/frb_generated.rs`; do not edit generated files manually.
-Dart, Rust, and the generator are pinned to the same bridge release.
-
-The official Cargokit backend in `rust_builder/` builds and bundles Rust during
-Flutter desktop builds. The app depends on that local FFI build plugin; macOS
-uses its CocoaPods build phase, and Linux/Windows use CMake. The crate emits
-`cdylib` and `staticlib` artifacts. Cargokit source is vendored by the official
-integration command.
-
-Before widget tests, build the host dynamic library with `cargo build --release`
-from `rust/`. FRB's generated loader uses `rust/target/release/` for unpackaged
-tests; packaged macOS apps use the Cargokit framework.
-
-The stable 2.13.0 Native Assets scaffold was tested, but its generated loader
-could not find the code asset. This project therefore uses FRB's documented
-default Cargokit backend, with no custom loader or unrelated workaround.
-
-## Validate and run
+## Validation
 
 ```sh
-flutter_rust_bridge_codegen generate
-cd rust
-cargo fmt --check
-cargo check
-cargo build --release
-cargo clippy -- -D warnings
-cargo test
-cd ..
+dart format lib/app lib/data lib/domain lib/ui lib/main.dart test
 flutter analyze
 flutter test
 flutter build macos
-flutter run -d macos
 git diff --check
-git status --short
 ```
 
-The widget test calls the real native bridge and checks that Flutter displays
-its returned value. Linux and Windows are configured but require validation on
-those hosts. This increment intentionally adds no state-management package or
-application architecture.
+Tests use fake repositories or injected bridge functions and require no native
+library, Matrix account, credentials, live homeserver, or network access. They
+cover safe failures, restoration/logout presentation, stale results, subscription
+cleanup, bounded reconciliation, desktop layouts, and keyboard composition.
 
-Official documentation:
-- [Existing-project integration](https://cjycode.com/flutter_rust_bridge/manual/integrate/builtin)
-- [Cargokit backend](https://cjycode.com/flutter_rust_bridge/manual/integrate/cargokit)
+## Native bindings
 
-Flutter currently warns that this generated macOS plugin does not support
-Swift Package Manager and that this will become an error in a future Flutter
-release. The verified integration uses Flutter's supported CocoaPods fallback.
+Generated files remain in `lib/src/rust/` and `rust/src/frb_generated.rs`. Do not
+edit them by hand. Only regenerate when intentionally changing the Rust API:
+
+```sh
+cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked
+flutter_rust_bridge_codegen generate
+```
+
+Native changes should be checked from `rust/` with `cargo fmt --check`,
+`cargo clippy -- -D warnings`, and `cargo test`. The architecture/UI checkpoint
+makes no native API changes and requires no regeneration.
+
+## Desktop behavior and limits
+
+At widths of 800 logical pixels and above, the 304-pixel conversation sidebar
+stays visible beside the selected conversation. Below 800 pixels, the same room
+selection drives a single pane with a back action. Message bodies are selectable;
+Enter sends and Shift+Enter adds a newline. Input is cleared only after server
+acceptance. The immediate input affordance preserves the native limit of 10,000
+Unicode scalar values; Rust remains authoritative for validation.
+
+The timeline retains at most 50 messages. There is no pagination, attachments,
+search, reactions, or additional authentication flow. Remote send failures can
+leave acceptance uncertain: check history before explicitly retrying. Logout
+keeps the existing truthful progress screen while Rust completes cooperative
+shutdown, including its normal long poll.
+
+Live authentication, encrypted messaging, quit/relaunch restoration, and logout
+must also be checked manually with a suitable test account. Fake tests do not
+prove production homeserver behavior. Linux and Windows builds require those
+hosts. The existing generated macOS plugin uses CocoaPods and currently emits a
+Flutter Swift Package Manager compatibility warning.

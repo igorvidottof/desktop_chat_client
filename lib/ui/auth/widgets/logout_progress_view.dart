@@ -55,7 +55,7 @@ class _LogoutProgressScreenState extends State<LogoutProgressScreen> {
                 container: true,
                 liveRegion: true,
                 label: 'Saindo da sua conta. Aguarde o encerramento da sessão.',
-                // A leitura assistiva é estável; só o texto visual muda a cada 3s.
+                // A leitura assistiva é estável; só o texto visual muda a cada 5s.
                 child: ExcludeSemantics(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,

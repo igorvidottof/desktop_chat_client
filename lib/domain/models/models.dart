@@ -1,0 +1,283 @@
+/// Projeção pública da conta; a sessão e seus segredos permanecem no SDK em Rust.
+class AccountSummary {
+  final String userId;
+  final String deviceId;
+  final String homeserverAddress;
+
+  const AccountSummary({
+    required this.userId,
+    required this.deviceId,
+    required this.homeserverAddress,
+  });
+
+  @override
+  int get hashCode =>
+      userId.hashCode ^ deviceId.hashCode ^ homeserverAddress.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AccountSummary &&
+          runtimeType == other.runtimeType &&
+          userId == other.userId &&
+          deviceId == other.deviceId &&
+          homeserverAddress == other.homeserverAddress;
+}
+
+/// Categorias seguras, sem respostas do servidor nem segredos da sessão.
+enum ConversationError {
+  notAuthenticated,
+  network,
+  tls,
+  rateLimited,
+  synchronization,
+  internal,
+}
+
+/// Resumo de apresentação; o identificador é opaco para Flutter, sem tipos Matrix.
+class ConversationSummary {
+  final String id;
+  final String displayName;
+
+  const ConversationSummary({required this.id, required this.displayName});
+
+  @override
+  int get hashCode => id.hashCode ^ displayName.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ConversationSummary &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          displayName == other.displayName;
+}
+
+/// Falhas estáveis sem mensagens, respostas ou objetos de autenticação do SDK.
+enum LoginError {
+  invalidServerAddress,
+  invalidInput,
+  passwordLoginUnsupported,
+  invalidCredentials,
+  network,
+  tls,
+  rateLimited,
+  alreadyAuthenticated,
+  loginInProgress,
+  secureStorage,
+  persistence,
+  unusableHomeserver,
+  internal,
+}
+
+/// Err nunca afirma sucesso local; o cliente permanece reservado para nova tentativa.
+enum LogoutError {
+  notAuthenticated,
+  logoutInProgress,
+  authenticationOperationInProgress,
+  secureStorage,
+  localCleanup,
+  internal,
+}
+
+/// Sucesso local confirmado; avisos não incluem detalhes remotos nem segredos.
+class LogoutResult {
+  final RemoteLogoutStatus remoteStatus;
+  final bool storeCleanupPending;
+
+  const LogoutResult({
+    required this.remoteStatus,
+    required this.storeCleanupPending,
+  });
+
+  @override
+  int get hashCode => remoteStatus.hashCode ^ storeCleanupPending.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LogoutResult &&
+          runtimeType == other.runtimeType &&
+          remoteStatus == other.remoteStatus &&
+          storeCleanupPending == other.storeCleanupPending;
+}
+
+enum MatrixSyncStatus {
+  connecting,
+  connected,
+  reconnecting,
+  authenticationRequired,
+}
+
+/// Evento da aplicação; metadados de entrega FRB permanecem na infraestrutura.
+class MatrixUpdate {
+  final MatrixUpdateKind kind;
+  final String? conversationId;
+  final MessageSummary? message;
+  final MatrixSyncStatus status;
+
+  const MatrixUpdate({
+    required this.kind,
+    this.conversationId,
+    this.message,
+    required this.status,
+  });
+}
+
+/// Apenas projeções da aplicação; nenhum evento ou token Matrix atravessa FRB.
+enum MatrixUpdateKind { message, conversationsChanged, resyncRequired, status }
+
+/// Categorias fixas sem conteúdo remoto ou detalhes internos.
+enum MessageHistoryError {
+  notAuthenticated,
+  invalidConversationId,
+  conversationNotFound,
+  conversationNotJoined,
+  encryptionUnsupported,
+  network,
+  tls,
+  rateLimited,
+  history,
+  internal,
+}
+
+/// Projeção textual; eventos, JSON e segredos do SDK permanecem em Rust.
+class MessageSummary {
+  final String id;
+  final String senderId;
+  final String body;
+  final int timestampMs;
+  final bool isOwn;
+
+  const MessageSummary({
+    required this.id,
+    required this.senderId,
+    required this.body,
+    required this.timestampMs,
+    required this.isOwn,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      senderId.hashCode ^
+      body.hashCode ^
+      timestampMs.hashCode ^
+      isOwn.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MessageSummary &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          senderId == other.senderId &&
+          body == other.body &&
+          timestampMs == other.timestampMs &&
+          isOwn == other.isOwn;
+}
+
+/// Categorias estáveis; detalhes do SDK e do servidor não atravessam a ponte.
+enum ProbeError {
+  invalidServerAddress,
+  network,
+  tls,
+  unusableHomeserver,
+  internal,
+}
+
+/// A sessão já revogada também satisfaz o encerramento remoto.
+enum RemoteLogoutStatus {
+  confirmed,
+  alreadyInvalid,
+  network,
+  tls,
+  rateLimited,
+  server,
+  internal,
+}
+
+/// Falhas fixas; uma falha de transporte pode deixar a aceitação remota incerta.
+enum SendMessageError {
+  notAuthenticated,
+  invalidConversationId,
+  conversationNotFound,
+  conversationNotJoined,
+  encryptionUnsupported,
+  emptyMessage,
+  messageTooLong,
+  sendInProgress,
+  network,
+  tls,
+  rateLimited,
+  send,
+  internal,
+}
+
+/// Confirmação do servidor; o envio não fornece origin_server_ts nem evento completo.
+class SendMessageResult {
+  final String eventId;
+
+  const SendMessageResult({required this.eventId});
+
+  @override
+  int get hashCode => eventId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SendMessageResult &&
+          runtimeType == other.runtimeType &&
+          eventId == other.eventId;
+}
+
+/// Informações da aplicação obtidas somente após uma resposta Matrix válida.
+class ServerInfo {
+  final String serverAddress;
+  final bool supportsPasswordLogin;
+
+  const ServerInfo({
+    required this.serverAddress,
+    required this.supportsPasswordLogin,
+  });
+
+  @override
+  int get hashCode => serverAddress.hashCode ^ supportsPasswordLogin.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ServerInfo &&
+          runtimeType == other.runtimeType &&
+          serverAddress == other.serverAddress &&
+          supportsPasswordLogin == other.supportsPasswordLogin;
+}
+
+/// Falhas locais e remotas classificadas sem conteúdo de arquivos ou do cofre.
+enum SessionError {
+  operationInProgress,
+  network,
+  tls,
+  invalidSession,
+  corruptedSession,
+  secureStorage,
+  persistence,
+  internal,
+}
+
+/// Estado seguro: nenhum token, DTO do SDK ou chave pode atravessar FRB.
+class SessionState {
+  final AccountSummary? account;
+
+  const SessionState({this.account});
+
+  @override
+  int get hashCode => account.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionState &&
+          runtimeType == other.runtimeType &&
+          account == other.account;
+}

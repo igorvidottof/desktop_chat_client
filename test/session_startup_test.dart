@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:desktop_chat_client/main.dart';
+import 'support/bridge_harness.dart';
 import 'package:desktop_chat_client/src/rust/api/simple.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,7 +14,7 @@ const restoredAccount = AccountSummary(
 Widget startupApp(
   SessionInitializer initialize, {
   Future<List<ConversationSummary>> Function()? rooms,
-}) => MyApp(
+}) => fixtureApp(
   logoutAction: () async => throw LogoutError.internal,
   initialize: initialize,
   probe: (_) async => throw ProbeError.internal,

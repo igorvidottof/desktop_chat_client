@@ -1,16 +1,21 @@
 import 'dart:async';
 
-import 'src/rust/api/simple.dart';
+import '../../src/rust/api/simple.dart';
 
 /// Fonte da sessão de apresentação; vários widgets compartilham um consumidor nativo.
 abstract interface class MatrixUpdateSource {
   Stream<MatrixUpdate> get updates;
+
+  /// Um snapshot vazio só é definitivo após a primeira invalidação sincronizada.
+  bool get initialRoomSyncPending;
   Future<void> dispose();
 }
 
 typedef MatrixUpdateSourceFactory = MatrixUpdateSource Function();
 
 class EmptyMatrixUpdateSource implements MatrixUpdateSource {
+  @override
+  bool get initialRoomSyncPending => false;
   @override
   Stream<MatrixUpdate> get updates => const Stream.empty();
   @override
@@ -52,6 +57,9 @@ class NativeMatrixUpdateSource implements MatrixUpdateSource {
   StreamSubscription<MatrixUpdate>? _subscription;
   String? _id;
   bool _disposed = false;
+  bool _initialRoomSyncPending = true;
+  @override
+  bool get initialRoomSyncPending => _initialRoomSyncPending;
 
   @override
   Stream<MatrixUpdate> get updates => _updates.stream;
@@ -67,6 +75,12 @@ class NativeMatrixUpdateSource implements MatrixUpdateSource {
       _subscription = _listen(subscriptionId: id).listen(
         (update) {
           if (!_disposed && _id == update.subscriptionId) {
+            if (update.status == MatrixSyncStatus.connected &&
+                (update.kind == MatrixUpdateKind.conversationsChanged ||
+                    (update.kind == MatrixUpdateKind.resyncRequired &&
+                        update.conversationId == null))) {
+              _initialRoomSyncPending = false;
+            }
             _updates.add(update);
             unawaited(
               _acknowledge(subscriptionId: id, sequence: update.sequence),

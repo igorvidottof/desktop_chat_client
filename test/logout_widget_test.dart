@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:desktop_chat_client/main.dart';
+import 'support/bridge_harness.dart';
 import 'package:desktop_chat_client/src/rust/api/simple.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,7 +19,7 @@ Widget logoutApp({
   required Future<LogoutResult> Function() logout,
   Future<List<ConversationSummary>> Function()? rooms,
   SessionInitializer? initialize,
-}) => MyApp(
+}) => fixtureApp(
   initialize: initialize ?? () async => const SessionState(account: account),
   logoutAction: logout,
   probe: (_) async => throw ProbeError.internal,
@@ -58,7 +58,7 @@ void main() {
       expect(find.text('Sala antiga'), findsOneWidget);
       final logoutButton =
           tester
-              .widget<FilledButton>(find.widgetWithText(FilledButton, 'Logout'))
+              .widget<TextButton>(find.widgetWithText(TextButton, 'Logout'))
               .onPressed!;
       await tester.tap(find.text('Logout'));
       await tester.pump();
