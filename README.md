@@ -160,6 +160,13 @@ Cada plataforma precisa ser validada no host correspondente. Esses comandos
 são procedimentos, não um registro de aprovação dos builds. Veja as
 [verificações pendentes](docs/limitacoes.md#verificações-ainda-necessárias).
 
+O workflow `Windows Release` roda manualmente em Actions e em pushes para `main`.
+Na CI, instala Flutter 3.47.6 diretamente e usa Rust stable também nos testes,
+alinhado ao Cargokit. Após validar e compilar, disponibiliza todo o diretório
+`build/windows/x64/runner/Release/` no artefato
+`desktop-chat-client-windows-release`; extraia o conteúdo completo para executar.
+O build Windows só estará validado após uma execução bem-sucedida no GitHub.
+
 ## Regenerar a bridge
 
 Somente quando a API pública Rust mudar, instale o gerador compatível e execute

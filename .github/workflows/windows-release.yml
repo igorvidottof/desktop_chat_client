@@ -1,0 +1,70 @@
+name: Windows Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  windows-release:
+    runs-on: windows-2022
+    env:
+      # Alinha os testes Cargo com a toolchain stable usada pelo Cargokit.
+      RUSTUP_TOOLCHAIN: stable
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.6'
+          channel: stable
+          architecture: x64
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Add Cargo to native build PATH
+        run: '"${env:CARGO_HOME}\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append'
+
+      - name: Verify Cargo availability
+        run: cargo --version
+
+      - name: Install NASM for AWS-LC
+        run: choco install nasm --yes --no-progress
+
+      - name: Add NASM to native build PATH
+        run: '"$env:ProgramFiles\NASM" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append'
+
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter project
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        run: flutter test
+
+      - name: Run Rust tests
+        working-directory: rust
+        run: cargo test --locked
+
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      - name: Upload complete Windows Release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-chat-client-windows-release
+          path: build/windows/x64/runner/Release/
+          if-no-files-found: error
+          include-hidden-files: true
