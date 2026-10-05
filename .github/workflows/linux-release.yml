@@ -133,6 +133,8 @@ jobs:
 
       - name: Verify native Flutter SDK
         run: |
+          # Inicializa o SDK antes de capturar JSON, pois o bootstrap pode escrever em stdout.
+          flutter --version
           flutter --version --machine > "$RUNNER_TEMP/flutter-version.json"
           python3 - <<'PY'
           import json

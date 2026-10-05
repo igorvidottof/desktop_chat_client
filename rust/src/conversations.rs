@@ -334,6 +334,9 @@ mod tests {
                         Err(_) => panic!("servidor de teste indisponível"),
                     }
                 };
+                // No macOS, a conexão aceita herda o modo não bloqueante do listener.
+                // As leituras abaixo aguardam os dados, limitadas pelo timeout.
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(std::time::Duration::from_secs(3)))
                     .unwrap();
@@ -377,6 +380,35 @@ mod tests {
             requests
         });
         (url, task)
+    }
+
+    #[test]
+    fn request_sequence_waits_for_delayed_headers_and_body() {
+        use std::io::{Read, Write};
+
+        let (url, server) = request_sequence(vec![false], true);
+        let mut socket = std::net::TcpStream::connect(url.trim_start_matches("http://")).unwrap();
+        socket
+            .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+            .unwrap();
+        // Permite que o servidor aceite a conexão antes da chegada dos dados.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        socket
+            .write_all(b"POST /_matrix/client/v3/createRoom HTTP/1.1\r\nContent-Length: 2\r\n\r\n")
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        socket.write_all(b"{}").unwrap();
+
+        let mut response = String::new();
+        socket.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert_eq!(
+            server.join().unwrap(),
+            vec![(
+                "POST /_matrix/client/v3/createRoom HTTP/1.1".to_owned(),
+                serde_json::json!({}),
+            )]
+        );
     }
 
     fn request_server(
