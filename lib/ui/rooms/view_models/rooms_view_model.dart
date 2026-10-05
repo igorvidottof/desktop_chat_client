@@ -127,6 +127,125 @@ class RoomsViewModel extends GetxController {
     );
   }
 
+  void beginCreation() {
+    if (_active && !state.creating) {
+      state = state.copyWith(
+        creationError: null,
+        creationInvitees: const [],
+        inviteeError: null,
+      );
+    }
+  }
+
+  static final _matrixUserId = RegExp(
+    r'^@[^\s:@]+:(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*|\[[0-9A-Fa-f:]+\])(?::[0-9]{1,5})?$',
+  );
+
+  bool addInvitee(String input) {
+    if (!_active || state.creating) return false;
+    final id = input.trim();
+    if (!_matrixUserId.hasMatch(id)) {
+      state = state.copyWith(
+        inviteeError:
+            'Informe apenas um ID Matrix completo, como @usuario:servidor.com.',
+      );
+      return false;
+    }
+    if (state.creationInvitees.contains(id)) {
+      state = state.copyWith(inviteeError: 'Esta pessoa já foi adicionada.');
+      return false;
+    }
+    state = state.copyWith(
+      creationInvitees: [...state.creationInvitees, id],
+      inviteeError: null,
+    );
+    return true;
+  }
+
+  void removeInvitee(String id) {
+    if (!_active || state.creating) return;
+    state = state.copyWith(
+      creationInvitees:
+          state.creationInvitees.where((invitee) => invitee != id).toList(),
+      inviteeError: null,
+    );
+  }
+
+  bool confirmInviteeDraft(String input) {
+    if (!_active || state.creating) return false;
+    if (input.trim().isEmpty) return true;
+    state = state.copyWith(
+      inviteeError: 'Use Adicionar para incluir esta pessoa ou limpe o campo.',
+    );
+    return false;
+  }
+
+  Future<bool> createRoom(String name, String inviteText) async {
+    if (!_active || state.creating) return false;
+    final invitees =
+        inviteText
+            .split(RegExp(r'[\s,;]+'))
+            .where((id) => id.isNotEmpty)
+            .toSet()
+            .toList();
+    final invalid = invitees.any((id) => !_matrixUserId.hasMatch(id));
+    if (name.trim().isEmpty || invalid) {
+      state = state.copyWith(
+        creationError:
+            name.trim().isEmpty
+                ? 'Informe o nome da sala.'
+                : 'Informe IDs Matrix completos, como @usuario:servidor.com.',
+      );
+      return false;
+    }
+    final generation = _generation;
+    state = state.copyWith(creating: true, creationError: null);
+    try {
+      final joined = await repository.createRoom(name.trim(), invitees);
+      if (!_active || generation != _generation) return false;
+      _installJoinedRoom(joined);
+      return true;
+    } catch (error) {
+      if (_active && generation == _generation) {
+        state = state.copyWith(
+          creationError: switch (error) {
+            ConversationError.notAuthenticated =>
+              'Sua sessão expirou. Entre novamente.',
+            ConversationError.network =>
+              'Não foi possível criar a sala. Verifique a conexão e tente novamente.',
+            ConversationError.rateLimited =>
+              'Aguarde um pouco e tente criar novamente.',
+            _ => 'Não foi possível criar a sala. Tente novamente.',
+          },
+        );
+      }
+      return false;
+    } finally {
+      if (_active && generation == _generation) {
+        state = state.copyWith(creating: false);
+      }
+    }
+  }
+
+  void _installJoinedRoom(ConversationSummary joined) {
+    // Descarta retratos iniciados antes da confirmação do store nativo.
+    _snapshotRevision++;
+    _nativeRooms = [
+      ..._nativeRooms.where((room) => room.id != joined.id),
+      joined,
+    ]..sort((a, b) {
+      final name = a.displayName.compareTo(b.displayName);
+      return name == 0 ? a.id.compareTo(b.id) : name;
+    });
+    _projectRooms();
+    selectRoom(joined);
+    if (_inFlight) {
+      _pending = true;
+    } else {
+      unawaited(load(background: true));
+    }
+  }
+
   Future<void> acceptInvitation(String roomId) async {
     if (!_active ||
         state.accepting.contains(roomId) ||
@@ -141,22 +260,7 @@ class RoomsViewModel extends GetxController {
     try {
       final joined = await repository.acceptInvitation(roomId);
       if (!_active || generation != _generation) return;
-      // A resposta confirma o store nativo. Retratos iniciados antes dela são descartados.
-      _snapshotRevision++;
-      _nativeRooms = [
-        ..._nativeRooms.where((room) => room.id != roomId),
-        joined,
-      ]..sort((a, b) {
-        final name = a.displayName.compareTo(b.displayName);
-        return name == 0 ? a.id.compareTo(b.id) : name;
-      });
-      _projectRooms();
-      selectRoom(joined);
-      if (_inFlight) {
-        _pending = true;
-      } else {
-        unawaited(load(background: true));
-      }
+      _installJoinedRoom(joined);
     } catch (error) {
       if (!_active || generation != _generation) return;
       state = state.copyWith(

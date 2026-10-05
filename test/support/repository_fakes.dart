@@ -71,6 +71,15 @@ class FakeAuthRepository implements AuthRepository {
 }
 
 class FakeRoomRepository implements RoomRepository {
+  final createdRooms = <(String, List<String>)>[];
+  Future<ConversationSummary> Function(String, List<String>) createAction =
+      (name, _) async => ConversationSummary(id: 'created', displayName: name);
+  @override
+  Future<ConversationSummary> createRoom(String name, List<String> invitees) {
+    createdRooms.add((name, invitees));
+    return createAction(name, invitees);
+  }
+
   final acceptedRooms = <String>[];
   Future<ConversationSummary> Function(String) acceptAction =
       (id) async => ConversationSummary(id: id, displayName: id);

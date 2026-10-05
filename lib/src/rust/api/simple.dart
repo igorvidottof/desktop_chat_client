@@ -27,6 +27,15 @@ Future<AccountSummary> login({
 Future<List<ConversationSummary>> listConversations() =>
     RustLib.instance.api.crateApiSimpleListConversations();
 
+/// Cria uma sala privada; convites e estado do cliente permanecem no SDK em Rust.
+Future<ConversationSummary> createRoom({
+  required String name,
+  required List<String> invitees,
+}) => RustLib.instance.api.crateApiSimpleCreateRoom(
+  name: name,
+  invitees: invitees,
+);
+
 /// Aceita somente um convite conhecido; o SDK mantém sessão e associação em Rust.
 Future<ConversationSummary> acceptRoomInvitation({
   required String conversationId,

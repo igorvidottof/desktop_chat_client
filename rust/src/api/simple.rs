@@ -85,6 +85,14 @@ pub async fn list_conversations() -> Result<Vec<ConversationSummary>, Conversati
     crate::conversations::list().await
 }
 
+/// Cria uma sala privada; convites e estado do cliente permanecem no SDK em Rust.
+pub async fn create_room(
+    name: String,
+    invitees: Vec<String>,
+) -> Result<ConversationSummary, ConversationError> {
+    crate::conversations::create(name, invitees).await
+}
+
 /// Aceita somente um convite conhecido; o SDK mantém sessão e associação em Rust.
 pub async fn accept_room_invitation(
     conversation_id: String,

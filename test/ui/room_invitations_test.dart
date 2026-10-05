@@ -232,7 +232,12 @@ void main() {
     expect(find.text('Sala convidada'), findsOneWidget);
     await tester.tap(find.text('Aceitar'));
     await tester.pump();
-    final button = tester.widget<TextButton>(find.byType(TextButton));
+    final button = tester.widget<TextButton>(
+      find.descendant(
+        of: find.byKey(const ValueKey('invite')),
+        matching: find.byType(TextButton),
+      ),
+    );
     expect(button.onPressed, isNull);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     pending.completeError(StateError('private server details'));
@@ -434,6 +439,17 @@ void main() {
       );
       expect(previous.isClosed, isFalse);
       expect(find.text('Conversa atual'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.descendant(
+          of: find.byType(RoomsView),
+          matching: find.byKey(const ValueKey('a')),
+        ),
+        80,
+        scrollable: find.descendant(
+          of: find.byType(RoomsView),
+          matching: find.byType(Scrollable),
+        ),
+      );
       expect(
         tester
             .widget<ListTile>(

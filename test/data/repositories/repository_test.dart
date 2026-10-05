@@ -16,6 +16,51 @@ const account = native.AccountSummary(
 );
 void main() {
   test(
+    'Criação encaminha parâmetros, mapeia sala e normaliza falhas',
+    () async {
+      final repository = MatrixRoomRepository(
+        MatrixBridgeService(
+          createRoom: ({required name, required invitees}) async {
+            expect(name, 'Sala');
+            expect(invitees, ['@alice:matrix.org', '@bob:example.org']);
+            return const native.ConversationSummary(
+              id: 'created',
+              displayName: 'Sala',
+            );
+          },
+        ),
+        EmptyMatrixUpdateSource(),
+      );
+      expect(
+        await repository.createRoom('Sala', [
+          '@alice:matrix.org',
+          '@bob:example.org',
+        ]),
+        const domain.ConversationSummary(id: 'created', displayName: 'Sala'),
+      );
+      for (final error in [
+        ...native.ConversationError.values,
+        StateError('private'),
+      ]) {
+        final failing = MatrixRoomRepository(
+          MatrixBridgeService(
+            createRoom:
+                ({required name, required invitees}) async => throw error,
+          ),
+          EmptyMatrixUpdateSource(),
+        );
+        await expectLater(
+          failing.createRoom('Sala', []),
+          throwsA(
+            error is native.ConversationError
+                ? domain.ConversationError.values.byName(error.name)
+                : domain.ConversationError.internal,
+          ),
+        );
+      }
+    },
+  );
+  test(
     'Rooms mapeia convites, encaminha aceitação e normaliza falhas',
     () async {
       const invite = native.ConversationSummary(

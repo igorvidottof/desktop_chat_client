@@ -14,6 +14,15 @@ class MatrixRoomRepository implements RoomRepository {
   @override
   Stream<MatrixUpdate> get updates => source.updates.map(mapUpdate);
   @override
+  Future<ConversationSummary> createRoom(String name, List<String> invitees) =>
+      safeBridgeCall(
+        () async =>
+            mapRoom(await bridge.createRoom(name: name, invitees: invitees)),
+        ConversationError.values,
+        ConversationError.internal,
+        native.ConversationError,
+      );
+  @override
   Future<ConversationSummary> acceptInvitation(String roomId) => safeBridgeCall(
     () async => mapRoom(await bridge.acceptInvitation(conversationId: roomId)),
     ConversationError.values,

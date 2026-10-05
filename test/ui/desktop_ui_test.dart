@@ -89,7 +89,7 @@ void main() {
           find.text('Selecione uma conversa'),
           size.width >= 800 ? findsOneWidget : findsNothing,
         );
-        expect(find.text('Conversas'), findsOneWidget);
+        expect(find.text('Salas'), findsOneWidget);
         await tester.tap(find.text(roomA.displayName));
         await tester.pumpAndSettle();
         expect(find.text('Mensagem recebida'), findsOneWidget);
@@ -110,7 +110,7 @@ void main() {
           isNull,
         );
         if (size.width >= 800) {
-          expect(find.text('Conversas'), findsOneWidget);
+          expect(find.text('Salas'), findsOneWidget);
           expect(
             tester
                 .widget<ListTile>(
@@ -135,11 +135,11 @@ void main() {
           );
           expect(find.text('Logout'), findsOneWidget);
         } else {
-          expect(find.text('Conversas'), findsNothing);
+          expect(find.text('Salas'), findsNothing);
           expect(find.byTooltip('Logout'), findsOneWidget);
           await tester.tap(find.byTooltip('Voltar às conversas'));
           await tester.pumpAndSettle();
-          expect(find.text('Conversas'), findsOneWidget);
+          expect(find.text('Salas'), findsOneWidget);
           await tester.tap(find.text(roomA.displayName));
           await tester.pumpAndSettle();
         }

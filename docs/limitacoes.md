@@ -9,7 +9,7 @@ representam resultados de testes ou builds nesta revisão documental.
 | Área | Limitação atual |
 | --- | --- |
 | Autenticação | Uma sessão ativa; senha e homeserver HTTPS explícito, sem redirecionamentos. Sem cadastro, SSO ou descoberta automática por domínio. |
-| Salas | Lista salas ingressadas e convites pendentes, com aceitação. Sem criação de salas, ingresso por ID/alias, rejeição de convites ou convite de outros usuários. |
+| Salas | Lista salas ingressadas e convites pendentes, com aceitação; cria salas privadas com convites por IDs Matrix completos. Sem descoberta pública, aliases, ingresso por ID/alias, rejeição de convites ou administração/alteração de membros após criação. |
 | Histórico | Até 50 eventos recentes, filtrados pelos tipos suportados, e até 50 mensagens na timeline. Sem paginação; podem aparecer menos de 50 mensagens. |
 | Conteúdo | Envio de texto; apresentação de texto, avisos e emotes simples. Sem anexos, reações, busca, edição ou tratamento de respostas encadeadas. |
 | Envio | Até 10.000 valores escalares Unicode. Sem fila persistente offline ou repetição automática do envio pela aplicação. |

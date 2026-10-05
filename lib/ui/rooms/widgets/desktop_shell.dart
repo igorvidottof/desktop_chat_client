@@ -61,15 +61,6 @@ class DesktopShell extends StatelessWidget {
                       ),
                     ),
                     const Divider(),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-                      child: Text(
-                        'Conversas',
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
                     Expanded(child: RoomsView(viewModel: rooms)),
                     const Divider(),
                     Padding(

@@ -1,7 +1,7 @@
 # desktop_chat_client
 
 Cliente desktop Matrix com interface Flutter e backend Rust, integrados por
-Flutter Rust Bridge. Inclui login por senha, salas já ingressadas, aceitação de convites, histórico
+Flutter Rust Bridge. Inclui login por senha, salas já ingressadas, aceitação de convites, criação de salas privadas com convites, histórico
 recente, envio e recebimento de texto, restauração de sessão e logout.
 
 - [Principais decisões técnicas](docs/decisoes-tecnicas.md)
@@ -104,7 +104,12 @@ sua instalação local.
 
 1. Informe a URL HTTPS do homeserver e verifique se ele aceita login por senha.
 2. Entre com uma conta Matrix existente. Convites aparecem em **Convites pendentes**;
-   use **Aceitar** para ingressar. Cadastro e criação de salas ficam fora do escopo.
+   use **Aceitar** para ingressar. Use **+ nova**, ao lado de **Salas**, para criar uma sala privada:
+   informe o nome e, opcionalmente, adicione pessoas com **Adicionar**, usando
+   um ID Matrix completo por vez, como `@usuario:servidor.com`. IDs repetidos
+   são rejeitados; use o botão de remoção para retirar uma pessoa. A sala
+   criada é aberta automaticamente; falhas mantêm o formulário para nova tentativa.
+   As novas salas não ativam criptografia. Cadastro fica fora do escopo.
 3. Aguarde a sincronização, selecione uma sala e envie texto. `Enter` envia;
    `Shift+Enter` insere uma quebra de linha. A entrada é limpa após a confirmação
    de envio pelo servidor.

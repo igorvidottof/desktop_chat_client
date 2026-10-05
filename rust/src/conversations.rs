@@ -97,13 +97,87 @@ async fn room_summary(room: &matrix_sdk::Room) -> ConversationSummary {
     item
 }
 
-static ACCEPTING: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+fn creation_request(
+    name: &str,
+    invitees: Vec<String>,
+) -> Result<matrix_sdk::ruma::api::client::room::create_room::v3::Request, ConversationError> {
+    use matrix_sdk::ruma::{
+        api::client::{
+            room::create_room::v3::{Request, RoomPreset},
+            room::Visibility,
+        },
+        UserId,
+    };
+    if name.trim().is_empty() {
+        return Err(ConversationError::Synchronization);
+    }
+    let mut request = Request::new();
+    request.name = Some(name.trim().to_owned());
+    request.visibility = Visibility::Private;
+    request.preset = Some(RoomPreset::PrivateChat);
+    for id in invitees {
+        let id = UserId::parse(id.trim()).map_err(|_| ConversationError::Synchronization)?;
+        if id.localpart().is_empty() || id.localpart().chars().any(char::is_whitespace) {
+            return Err(ConversationError::Synchronization);
+        }
+        if !request.invite.contains(&id) {
+            request.invite.push(id);
+        }
+    }
+    // Sem alias, estado de criptografia ou marcação de conversa direta.
+    Ok(request)
+}
+
+pub(crate) async fn create(
+    name: String,
+    invitees: Vec<String>,
+) -> Result<ConversationSummary, ConversationError> {
+    tokio::spawn(async move {
+        let _operation = auth::CLIENT_OPERATIONS.read().await;
+        let client = auth::authenticated_client()?;
+        let _reservation = RoomOperationReservation::acquire("create-room".into())?;
+        let result =
+            create_with_client(&client, &name, invitees, || auth::ensure_current(&client)).await;
+        if result.is_ok() {
+            client.sync.invalidate_rooms();
+        }
+        result
+    })
+    .await
+    .map_err(|_| ConversationError::Internal)?
+}
+
+async fn create_with_client(
+    client: &matrix_sdk::Client,
+    name: &str,
+    invitees: Vec<String>,
+    ensure_current: impl Fn() -> Result<(), ConversationError>,
+) -> Result<ConversationSummary, ConversationError> {
+    ensure_current()?;
+    let request = creation_request(name, invitees)?;
+    let result = client
+        .create_room(request)
+        .await
+        .map_err(|error| map_read_error(message_history::map_sdk_error(error)));
+    // Falhas e resultados de uma sessão anterior não atravessam a ponte.
+    ensure_current()?;
+    let room = result?;
+    // O SDK já registra a associação; o nome solicitado será confirmado pelo sync.
+    Ok(summary(
+        room.room_id().to_string(),
+        Some(name.trim().to_owned()),
+        0,
+        false,
+    ))
+}
+
+static ROOM_OPERATIONS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
     std::sync::LazyLock::new(std::sync::Mutex::default);
 
-struct AcceptReservation(String);
-impl AcceptReservation {
+struct RoomOperationReservation(String);
+impl RoomOperationReservation {
     fn acquire(id: String) -> Result<Self, ConversationError> {
-        if !ACCEPTING
+        if !ROOM_OPERATIONS
             .lock()
             .map_err(|_| ConversationError::Internal)?
             .insert(id.clone())
@@ -113,9 +187,9 @@ impl AcceptReservation {
         Ok(Self(id))
     }
 }
-impl Drop for AcceptReservation {
+impl Drop for RoomOperationReservation {
     fn drop(&mut self) {
-        if let Ok(mut rooms) = ACCEPTING.lock() {
+        if let Ok(mut rooms) = ROOM_OPERATIONS.lock() {
             rooms.remove(&self.0);
         }
     }
@@ -126,7 +200,7 @@ pub(crate) async fn accept(id: String) -> Result<ConversationSummary, Conversati
     tokio::spawn(async move {
         let _operation = auth::CLIENT_OPERATIONS.read().await;
         let client = auth::authenticated_client()?;
-        let _reservation = AcceptReservation::acquire(id.clone())?;
+        let _reservation = RoomOperationReservation::acquire(id.clone())?;
         auth::ensure_current(&client)?;
         let result = accept_with_client(&client, &id).await;
         auth::ensure_current(&client)?;
@@ -234,58 +308,220 @@ mod tests {
         client
     }
 
-    // Servidor finito de teste; somente a linha da operação é devolvida, sem cabeçalhos.
-    fn join_server(fail: bool) -> (String, std::thread::JoinHandle<String>) {
+    // Servidor finito de teste; devolve operação e corpo, sem cabeçalhos de autenticação.
+    fn request_sequence(
+        failures: Vec<bool>,
+        create: bool,
+    ) -> (
+        String,
+        std::thread::JoinHandle<Vec<(String, serde_json::Value)>>,
+    ) {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         listener.set_nonblocking(true).unwrap();
         let task = std::thread::spawn(move || {
-            let started = std::time::Instant::now();
-            let mut socket = loop {
-                match listener.accept() {
-                    Ok((socket, _)) => break socket,
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        assert!(started.elapsed() < std::time::Duration::from_secs(10));
-                        std::thread::sleep(std::time::Duration::from_millis(10));
+            let mut requests = Vec::new();
+            for fail in failures {
+                let started = std::time::Instant::now();
+                let mut socket = loop {
+                    match listener.accept() {
+                        Ok((socket, _)) => break socket,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(started.elapsed() < std::time::Duration::from_secs(10));
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                        }
+                        Err(_) => panic!("servidor de teste indisponível"),
                     }
-                    Err(_) => panic!("servidor de teste indisponível"),
+                };
+                socket
+                    .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                    .unwrap();
+                let mut bytes = Vec::new();
+                let mut byte = [0];
+                while !bytes.ends_with(b"\r\n\r\n") {
+                    assert!(bytes.len() < 16_384);
+                    socket.read_exact(&mut byte).unwrap();
+                    bytes.push(byte[0]);
                 }
-            };
-            socket
-                .set_read_timeout(Some(std::time::Duration::from_secs(3)))
-                .unwrap();
-            let mut bytes = Vec::new();
-            let mut byte = [0];
-            while !bytes.ends_with(b"\r\n\r\n") {
-                assert!(bytes.len() < 16_384);
-                socket.read_exact(&mut byte).unwrap();
-                bytes.push(byte[0]);
+                let request = String::from_utf8(bytes).unwrap();
+                let line = request.lines().next().unwrap().to_owned();
+                let length = request
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap_or(0);
+                let mut body_bytes = vec![0; length];
+                socket.read_exact(&mut body_bytes).unwrap();
+                let (status, body) = if fail {
+                    (
+                        "403 Forbidden",
+                        r#"{"errcode":"M_FORBIDDEN","error":"private remote details"}"#,
+                    )
+                } else {
+                    (
+                        "200 OK",
+                        if create {
+                            r#"{"room_id":"!created:example.org"}"#
+                        } else {
+                            r#"{"room_id":"!invite:example.org"}"#
+                        },
+                    )
+                };
+                write!(socket, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                requests.push((line, serde_json::from_slice(&body_bytes).unwrap()));
             }
-            let request = String::from_utf8(bytes).unwrap();
-            let line = request.lines().next().unwrap().to_owned();
-            let length = request
-                .lines()
-                .find_map(|line| {
-                    let (name, value) = line.split_once(':')?;
-                    name.eq_ignore_ascii_case("content-length")
-                        .then(|| value.trim().parse::<usize>().unwrap())
-                })
-                .unwrap_or(0);
-            let mut body_bytes = vec![0; length];
-            socket.read_exact(&mut body_bytes).unwrap();
-            let (status, body) = if fail {
-                (
-                    "403 Forbidden",
-                    r#"{"errcode":"M_FORBIDDEN","error":"private remote details"}"#,
-                )
-            } else {
-                ("200 OK", r#"{"room_id":"!invite:example.org"}"#)
-            };
-            write!(socket, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
-            line
+            requests
         });
         (url, task)
+    }
+
+    fn request_server(
+        fail: bool,
+        create: bool,
+    ) -> (String, std::thread::JoinHandle<(String, serde_json::Value)>) {
+        let (url, server) = request_sequence(vec![fail], create);
+        (
+            url,
+            std::thread::spawn(move || server.join().unwrap().remove(0)),
+        )
+    }
+
+    fn join_server(fail: bool) -> (String, std::thread::JoinHandle<String>) {
+        let (url, server) = request_server(fail, false);
+        (url, std::thread::spawn(move || server.join().unwrap().0))
+    }
+
+    #[tokio::test]
+    async fn sdk_creation_sends_private_parameters_and_updates_joined_store() {
+        for invitees in [
+            vec![],
+            vec![
+                "@alice:matrix.org".to_owned(),
+                "@bob:example.org".to_owned(),
+                "@alice:matrix.org".to_owned(),
+            ],
+        ] {
+            let (url, server) = request_server(false, true);
+            let client = fixture_client(&url).await;
+            let room = create_with_client(&client, "  Nova sala  ", invitees.clone(), || Ok(()))
+                .await
+                .unwrap();
+            let (line, body) = server.join().unwrap();
+            assert_eq!(line, "POST /_matrix/client/v3/createRoom HTTP/1.1");
+            assert_eq!(body["name"], "Nova sala");
+            // Ruma omite a visibilidade privada por ser o padrão do protocolo.
+            assert!(body
+                .get("visibility")
+                .is_none_or(|value| value == "private"));
+            assert_eq!(body["preset"], "private_chat");
+            assert!(body.get("room_alias_name").is_none());
+            assert!(body
+                .get("initial_state")
+                .is_none_or(|v| v.as_array().unwrap().is_empty()));
+            assert!(body.get("is_direct").is_none_or(|v| v == false));
+            let sent: Vec<String> = body
+                .get("invite")
+                .map(|v| serde_json::from_value(v.clone()).unwrap())
+                .unwrap_or_default();
+            assert_eq!(sent.len(), if invitees.is_empty() { 0 } else { 2 });
+            if !sent.is_empty() {
+                assert_eq!(sent, ["@alice:matrix.org", "@bob:example.org"]);
+            }
+            assert_eq!(room.id, "!created:example.org");
+            assert_eq!(room.display_name, "Nova sala");
+            assert!(!room.is_invited && !room.is_encrypted);
+            assert!(snapshot(&client)
+                .await
+                .unwrap()
+                .iter()
+                .any(|r| r.id == room.id && !r.is_invited));
+        }
+    }
+
+    #[tokio::test]
+    async fn sdk_creation_failure_does_not_add_room_and_allows_retry() {
+        let (url, server) = request_sequence(vec![true, false], true);
+        let client = fixture_client(&url).await;
+        assert_eq!(
+            create_with_client(&client, "Sala", vec![], || Ok(())).await,
+            Err(ConversationError::Synchronization)
+        );
+        assert_eq!(client.joined_rooms().len(), 1);
+        assert!(!snapshot(&client)
+            .await
+            .unwrap()
+            .iter()
+            .any(|r| r.id == "!created:example.org"));
+        assert!(create_with_client(&client, "Sala", vec![], || Ok(()))
+            .await
+            .is_ok());
+        let requests = server.join().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0], requests[1]);
+        assert_eq!(client.joined_rooms().len(), 2);
+    }
+
+    #[test]
+    fn creation_validates_names_and_matrix_ids_before_network() {
+        for name in ["", " \n\t"] {
+            assert!(creation_request(name, vec![]).is_err());
+        }
+        for id in [
+            "alice",
+            "@alice",
+            "alice:matrix.org",
+            "@:matrix.org",
+            "@alice:",
+        ] {
+            assert!(creation_request("Sala", vec![id.into()]).is_err(), "{id}");
+        }
+        let request = creation_request(
+            "Sala",
+            vec![" @alice:matrix.org ".into(), "@alice:matrix.org".into()],
+        )
+        .unwrap();
+        assert_eq!(request.invite.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn creation_requires_current_authenticated_session() {
+        assert_eq!(
+            create("Sala".into(), vec![]).await,
+            Err(ConversationError::NotAuthenticated)
+        );
+    }
+
+    #[tokio::test]
+    async fn creation_rejects_stale_success_and_failure_after_sdk_response() {
+        for fails in [false, true] {
+            let (url, server) = request_server(fails, true);
+            let client = fixture_client(&url).await;
+            let checks = std::cell::Cell::new(0);
+            let result = create_with_client(&client, "Sala", vec![], || {
+                checks.set(checks.get() + 1);
+                if checks.get() == 1 {
+                    Ok(())
+                } else {
+                    Err(ConversationError::NotAuthenticated)
+                }
+            })
+            .await;
+            assert_eq!(result, Err(ConversationError::NotAuthenticated));
+            assert_eq!(checks.get(), 2);
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn creation_reservation_prevents_overlap_and_releases_after_failure() {
+        let first = RoomOperationReservation::acquire("create-room".into()).unwrap();
+        assert!(RoomOperationReservation::acquire("create-room".into()).is_err());
+        drop(first);
+        assert!(RoomOperationReservation::acquire("create-room".into()).is_ok());
     }
 
     #[tokio::test]
@@ -368,14 +604,14 @@ mod tests {
 
     #[test]
     fn accept_reservation_blocks_duplicates_and_releases_for_retry() {
-        let reservation = AcceptReservation::acquire("test-invite".into()).unwrap();
+        let reservation = RoomOperationReservation::acquire("test-invite".into()).unwrap();
         assert!(matches!(
-            AcceptReservation::acquire("test-invite".into()),
+            RoomOperationReservation::acquire("test-invite".into()),
             Err(ConversationError::Synchronization)
         ));
-        let other = AcceptReservation::acquire("other-invite".into()).unwrap();
+        let other = RoomOperationReservation::acquire("other-invite".into()).unwrap();
         drop(reservation);
-        assert!(AcceptReservation::acquire("test-invite".into()).is_ok());
+        assert!(RoomOperationReservation::acquire("test-invite".into()).is_ok());
         drop(other);
     }
 
