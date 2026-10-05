@@ -47,14 +47,15 @@ jobs:
           file "$FLUTTER_ROOT/bin/cache/dart-sdk/bin/dart"
           lipo "$FLUTTER_ROOT/bin/cache/dart-sdk/bin/dart" -verify_arch arm64
 
-      - name: Configure native ARM64 release
-        # Flutter 3.47.6 passa ARCHS=arm64 ao Xcode e ao Cargokit sem alterar o projeto.
-        run: flutter config --enable-macos-arm64-only
+      - name: Configure universal macOS release
+        # Flutter 3.47.6 usa o release universal ao desativar a opção exclusiva de ARM64.
+        # O Xcode passa ARCHS="arm64 x86_64" ao Cargokit, que compila os dois targets Rust.
+        run: flutter config --no-enable-macos-arm64-only
 
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Add Cargo to native build PATH
         run: echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
@@ -66,6 +67,7 @@ jobs:
           rustup show
           rustc -vV | grep -Fx 'host: aarch64-apple-darwin'
           rustup target list --installed | grep -Fx aarch64-apple-darwin
+          rustup target list --installed | grep -Fx x86_64-apple-darwin
 
       - name: Verify runner CocoaPods
         # Reutiliza o CocoaPods do runner; 1.16.2 é a versão recomendada pelo Flutter 3.47.6.
@@ -102,26 +104,46 @@ jobs:
           fi
           app_path="${apps[0]}"
           test -d "$app_path"
+          test "$(basename "$app_path")" = desktop_chat_client.app
           executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
           executable="$app_path/Contents/MacOS/$executable_name"
           test -x "$executable"
           test -d "$app_path/Contents/Frameworks/App.framework/Resources/flutter_assets"
           flutter_binary="$app_path/Contents/Frameworks/FlutterMacOS.framework/FlutterMacOS"
           test -f "$flutter_binary"
-          file "$flutter_binary"
-          lipo -info "$flutter_binary"
-          lipo "$flutter_binary" -verify_arch arm64
+
+          verify_universal() {
+            local binary="$1"
+            test -f "$binary"
+            file "$binary"
+            lipo -info "$binary"
+            echo "Architectures: $(lipo -archs "$binary")"
+            lipo "$binary" -verify_arch arm64 x86_64
+          }
 
           # O pod usa -force_load para incorporar esta biblioteca estática ao framework.
           rust_archive="$products_dir/rust_lib_desktop_chat_client/librust_lib_desktop_chat_client.a"
           rust_framework="$app_path/Contents/Frameworks/rust_lib_desktop_chat_client.framework/rust_lib_desktop_chat_client"
-          for binary in "$executable" "$rust_archive" "$rust_framework"; do
-            test -f "$binary"
-            file "$binary"
-            lipo -info "$binary"
-            lipo "$binary" -verify_arch arm64
-            test "$(lipo -archs "$binary")" = arm64
+          for binary in "$executable" "$rust_archive" "$rust_framework" "$flutter_binary"; do
+            verify_universal "$binary"
           done
+
+          # Inspeciona os arquivos reais, incluindo Versions/A dos frameworks, sem repetir symlinks.
+          # Recursos independentes de arquitetura não entram na verificação Mach-O.
+          bundle_files="$RUNNER_TEMP/macos-bundle-files"
+          find "$app_path" -type f -print0 > "$bundle_files"
+          native_count=0
+          while IFS= read -r -d '' binary; do
+            description="$(file -b "$binary")"
+            case "$description" in
+              *Mach-O*)
+                verify_universal "$binary"
+                native_count=$((native_count + 1))
+                ;;
+            esac
+          done < "$bundle_files"
+          test "$native_count" -gt 0
+          echo "Universal bundle audit passed: $native_count Mach-O files"
           echo "Release app: $app_path"
           echo "app-path=$app_path" >> "$GITHUB_OUTPUT"
 
@@ -131,14 +153,14 @@ jobs:
         # O ZIP interno preserva permissões, symlinks e metadados do bundle completo.
         run: |
           mkdir -p dist
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" dist/desktop-chat-client-macos-arm64.zip
-          test -s dist/desktop-chat-client-macos-arm64.zip
-          unzip -tq dist/desktop-chat-client-macos-arm64.zip
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" dist/desktop-chat-client-macos-universal.zip
+          test -s dist/desktop-chat-client-macos-universal.zip
+          unzip -tq dist/desktop-chat-client-macos-universal.zip
 
       - name: Upload complete macOS Release archive
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-chat-client-macos-arm64
-          path: dist/desktop-chat-client-macos-arm64.zip
+          name: desktop-chat-client-macos-universal
+          path: dist/desktop-chat-client-macos-universal.zip
           if-no-files-found: error
           compression-level: 0

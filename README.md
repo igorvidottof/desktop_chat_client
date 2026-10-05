@@ -1,211 +1,130 @@
 # desktop_chat_client
 
-Cliente desktop Matrix com interface Flutter e backend Rust, integrados por
-Flutter Rust Bridge. Inclui login por senha, salas já ingressadas, aceitação de convites, criação de salas privadas com convites, histórico
-recente, envio e recebimento de texto, restauração de sessão e logout.
+Cliente de mensagens Matrix para desktop (macOS, Windows e Linux), criando em
+Flutter. A comunicação Matrix é implementada em Rust com `matrix-sdk` e exposta
+ao Flutter por `flutter_rust_bridge`.
 
-- [Principais decisões técnicas](docs/decisoes-tecnicas.md)
-- [Limitações e itens pendentes](docs/limitacoes.md)
+## Requisitos
 
-## Configuração
+- Flutter **3.47.6** no `PATH` (versão registrada em `.fvmrc`).
+- Rust **stable**, instalado via `rustup`, com Cargo no `PATH`.
+  O build Flutter e a CI usam stable; comandos Cargo locais em `rust/` usam
+  **1.99.0**, fixado em `rust/rust-toolchain.toml` e instalado pelo rustup.
+- macOS 12 ou superior: Xcode, ferramentas de linha de comando e CocoaPods **1.16.2 ou superior**.
+- Windows: Visual Studio com **Desenvolvimento para desktop com C++**, Rust MSVC
+  e NASM no `PATH` (usado pelo AWS-LC).
+- Linux: `clang`, `cmake`, `ninja-build`, `pkg-config`, `libgtk-3-dev`,
+  `liblzma-dev` e `libdbus-1-dev` (nomes de pacotes Ubuntu/Debian).
 
-Execute os comandos na raiz do projeto, salvo indicação contrária.
+O cofre do sistema deve estar disponível para login e restauração de sessão:
+Keychain no macOS, cofre de credenciais no Windows ou Secret Service desbloqueado
+no Linux. O primeiro build precisa de internet para baixar dependências.
 
-### Ferramentas
+## Como executar
 
-| Componente          | Versão ou configuração do projeto                                                                                          |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Flutter / Dart      | Flutter 3.47.6 fixado em `.fvmrc`, gerenciado pelo FVM; Dart incluído no SDK Flutter |
-| Rust                | 1.99.0, fixado em `rust/rust-toolchain.toml`, com Rustfmt e Clippy                                                         |
-| Flutter Rust Bridge | 2.13.0 no Dart, Rust e gerador de bindings                                                                                 |
-| Matrix Rust SDK     | 0.19.1, com SQLite embarcado, TLS via Rustls                                                                               |
-| GetX                | 4.7.3 no `pubspec.lock`                                                                                                    |
-
-Instale Rust por meio do `rustup`, com os executáveis no `PATH`.
-O [FVM](https://fvm.app/documentation/getting-started/installation) é obrigatório
-para desenvolver, executar e revisar este projeto. Instale-o antes de continuar
-e coloque `fvm` no `PATH`. No macOS com Homebrew:
+Na raiz do projeto, usando Flutter 3.47.6:
 
 ```sh
-brew install fvm
+flutter pub get
+flutter run -d macos
 ```
 
-Na raiz do projeto, execute `fvm install` para instalar o Flutter 3.47.6 fixado
-em `.fvmrc`. Use `fvm flutter` e `fvm dart` para todos os comandos Flutter/Dart
-do projeto, garantindo que todos usem a mesma versão do SDK. O SDK e os arquivos
-locais de `.fvm/` não são versionados.
-
-`pubspec.lock` e `rust/Cargo.lock` registram as dependências resolvidas. O primeiro
-build precisa de internet para baixar pacotes e a toolchain Rust. Não é necessário
-instalar um servidor Matrix ou guardar credenciais em arquivos do projeto.
-
-Prepare o ambiente nativo do sistema em que vai executar a aplicação:
-
-| Sistema | Requisitos                                                                                                                        |
-| ------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| macOS   | Xcode, ferramentas de linha de comando e CocoaPods; a integração existente usa Cargokit/CocoaPods.                                |
-| Linux   | Compilador e bibliotecas desktop exigidos pelo Flutter, além de um Secret Service acessível e desbloqueado para guardar a sessão. |
-| Windows | Visual Studio com ferramentas de desenvolvimento desktop C++, toolchain Rust MSVC e acesso ao cofre de credenciais do sistema.    |
-
-Consulte as instruções oficiais de instalação do Flutter para
-[macOS](https://docs.flutter.dev/platform-integration/macos/setup),
-[Linux](https://docs.flutter.dev/platform-integration/linux/setup) e
-[Windows](https://docs.flutter.dev/platform-integration/windows/setup).
-
-Confira o ambiente e obtenha as dependências:
+No Windows ou Linux, substitua o comando de execução pelo correspondente ao host:
 
 ```sh
-fvm install
-fvm flutter --version
-fvm flutter doctor -v
-fvm flutter pub get
-fvm flutter devices
+flutter run -d windows
+flutter run -d linux
 ```
 
-Confira a toolchain fixada a partir de `rust/`:
+O build Flutter compila e integra Rust automaticamente; os bindings já estão no
+repositório. Informe o homeserver HTTPS **https://matrix.org** (foi o único testado) e uma conta Matrix existente com login
+por senha (se não tiver, crie uma em **https://account.matrix.org/register** se não tiver).
+
+## Funcionalidades implementadas
+
+- Conexão com homeserver Matrix e autenticação por senha.
+- Restauração de sessão e logout.
+- Listagem de salas e histórico recente de mensagens.
+- Envio de mensagens de texto e atualização contínua das conversas.
+- Indicadores de mensagens não lidas e marcação de leitura.
+- Aceitação de convites e criação de salas privadas com convites.
+
+## Testes
+
+Na raiz do projeto:
 
 ```sh
-cd rust
-rustup show active-toolchain
-rustc --version
-cd ..
+flutter analyze
+flutter test
 ```
 
-## Execução
-
-Use o comando correspondente ao sistema do host:
+A partir de `rust/`:
 
 ```sh
-fvm flutter run -d macos
+cargo test --locked
 ```
 
-```sh
-fvm flutter run -d linux
+Os testes usam fakes e servidores locais de teste; não exigem credenciais nem
+homeserver de produção.
+
+## Artefatos de release / CI
+
+Os workflows GitHub Actions em `.github/workflows/` executam em pushes para
+`main` ou manualmente e produzem estes artefatos após builds bem-sucedidos:
+
+| Plataforma | Arquitetura                                    | Artefato                              |
+| ---------- | ---------------------------------------------- | ------------------------------------- |
+| Windows    | x64                                            | `desktop-chat-client-windows-release` |
+| Linux      | x64                                            | `desktop-chat-client-linux-x64`       |
+| Linux      | ARM64                                          | `desktop-chat-client-linux-arm64`     |
+| macOS      | Universal (Apple Silicon arm64 e Intel x86_64) | `desktop-chat-client-macos-universal` |
+
+Para baixar artefatos disponíveis, basta estar conectado ao GitHub e ter acesso
+de leitura ao repositório; não é necessário fazer fork. Acesse **Actions**, abra
+uma execução bem-sucedida e baixe o artefato da sua plataforma em **Artifacts**.
+
+Para gerar seus próprios artefatos, faça um fork, habilite os workflows na aba
+**Actions**, selecione **Windows Release**, **Linux Release** ou **macOS Release**
+e clique em **Run workflow** na branch `main`. Aguarde a conclusão e baixe o artefato.
+
+Extraia o conteúdo completo,
+mantendo executável, bibliotecas e dados juntos. No macOS, extraia também o ZIP
+interno `desktop-chat-client-macos-universal.zip`, que contém o aplicativo `.app`.
+
+### Windows: runtime ausente
+
+Se aparecer `VCRUNTIME140.dll was not found`, falta o runtime Microsoft Visual C++.
+Instale o **Microsoft Visual C++ Redistributable for Visual Studio 2015–2022 (x64)**
+pelo [download oficial da Microsoft](https://aka.ms/vc14/vc_redist.x64.exe) e abra
+o aplicativo novamente. Essa é uma dependência de runtime da Microsoft; não baixe
+DLLs individuais de sites de terceiros.
+
+## Arquitetura
+
+```text
+Flutter UI
+    ↓
+GetX ViewModels
+    ↓
+Repositories / Services
+    ↓
+flutter_rust_bridge
+    ↓
+Rust / Matrix SDK
 ```
 
-```sh
-fvm flutter run -d windows
-```
+Flutter cuida da apresentação e do estado da interface; Rust cuida da comunicação
+do protocolo Matrix, sincronização e sessão.
 
-O build Flutter integra a biblioteca Rust por meio de `rust_builder/`; não há
-backend separado para iniciar. Os bindings já estão no repositório.
-No ambiente macOS usado no desenvolvimento, selecione o CocoaPods do Homebrew
-caso outra instalação no `PATH` cause falhas:
+## Segurança
 
-```sh
-export PATH="/opt/homebrew/bin:$PATH"
-fvm flutter run -d macos
-```
+Credenciais de sessão e dados de restauração são gerenciados no lado nativo/Rust.
+Tokens e o segredo do armazenamento ficam no cofre do sistema, sem exposição à
+interface Flutter. A senha de login não é persistida.
 
-Esse caminho é específico de instalações em `/opt/homebrew`; ajuste-o conforme
-sua instalação local.
+## Limitações
 
-### Usar a aplicação
-
-1. Informe a URL HTTPS do homeserver e verifique se ele aceita login por senha.
-2. Entre com uma conta Matrix existente. Convites aparecem em **Convites pendentes**;
-   use **Aceitar** para ingressar. Use **+ nova**, ao lado de **Salas**, para criar uma sala privada:
-   informe o nome e, opcionalmente, adicione pessoas com **Adicionar**, usando
-   um ID Matrix completo por vez, como `@usuario:servidor.com`. IDs repetidos
-   são rejeitados; use o botão de remoção para retirar uma pessoa. A sala
-   criada é aberta automaticamente; falhas mantêm o formulário para nova tentativa.
-   As novas salas não ativam criptografia. Cadastro fica fora do escopo.
-3. Aguarde a sincronização, selecione uma sala e envie texto. `Enter` envia;
-   `Shift+Enter` insere uma quebra de linha. A entrada é limpa após a confirmação
-   de envio pelo servidor.
-4. Feche e reabra o aplicativo para usar a restauração de sessão. Use a ação de
-   logout para encerrar a sessão local e solicitar a saída ao servidor.
-
-O cofre do sistema deve estar disponível para login e restauração. Senhas não
-são persistidas; tokens e o segredo do store ficam sob responsabilidade de Rust.
-Consulte as [limitações](docs/limitacoes.md) do escopo atual.
-
-## Verificação
-
-Para alterações Dart, na raiz:
-
-```sh
-fvm dart format lib/app lib/data lib/domain lib/ui lib/main.dart test
-fvm flutter analyze
-fvm flutter test
-```
-
-Os testes Dart usam repositórios falsos ou funções da bridge injetadas, sem
-biblioteca nativa carregada, conta Matrix, credenciais ou homeserver real.
-Cobrem estados, falhas, resultados obsoletos, assinaturas, reconciliação de
-mensagens, layouts e mensagens não lidas.
-
-Para alterações Rust, a partir de `rust/`:
-
-```sh
-cargo fmt --check
-cargo clippy -- -D warnings
-cargo test
-```
-
-Os testes Rust incluem cofre falso, ciclo da sessão, sincronização
-com o SDK. Alguns usam servidor HTTP de teste em loopback; não precisam de
-credenciais ou homeserver de produção.
-
-Para gerar um build, execute na raiz o comando do sistema local:
-
-```sh
-fvm flutter build macos
-```
-
-```sh
-fvm flutter build linux
-```
-
-```sh
-fvm flutter build windows
-```
-
-Cada plataforma precisa ser validada no host correspondente. Esses comandos
-são procedimentos, não um registro de aprovação dos builds. Veja as
-[verificações pendentes](docs/limitacoes.md#verificações-ainda-necessárias).
-
-O workflow `Windows Release` roda manualmente em Actions e em pushes para `main`.
-Na CI, instala Flutter 3.47.6 diretamente e usa Rust stable também nos testes,
-alinhado ao Cargokit. Após validar e compilar, disponibiliza todo o diretório
-`build/windows/x64/runner/Release/` no artefato
-`desktop-chat-client-windows-release`; extraia o conteúdo completo para executar.
-O build Windows só estará validado após uma execução bem-sucedida no GitHub.
-
-O workflow `Linux Release` no GitHub Actions roda manualmente ou em pushes
-para `main` e prepara dois releases em runners Linux nativos:
-
-- `desktop-chat-client-linux-x64`: para máquinas Linux Intel/AMD de 64 bits.
-- `desktop-chat-client-linux-arm64`: para máquinas Linux ARM64/aarch64, incluindo
-  VMs Ubuntu ARM em Macs com Apple Silicon.
-
-Após uma execução bem-sucedida, baixe o artefato correspondente na página da
-execução em Actions e extraia todo o conteúdo: cada artefato contém o bundle
-completo, com executável, bibliotecas e dados. O x64 usa
-`build/linux/x64/release/bundle/`; o caminho ARM64 é descoberto e registrado
-pela CI após o build. Cada arquitetura só estará validada após uma execução
-bem-sucedida do respectivo job no GitHub.
-
-O workflow `macOS Release` no GitHub Actions roda manualmente ou em pushes para
-`main` e está configurado para compilar o release ARM64 nativo em Apple Silicon.
-O artefato `desktop-chat-client-macos-arm64` contém o ZIP produzido por `ditto`,
-com o bundle `.app` completo, permissões e metadados; extraia também esse ZIP
-no macOS. O aplicativo não recebe assinatura Developer ID nem notarização
-(a assinatura ad-hoc do projeto é mantida), portanto o Gatekeeper pode alertar
-ao abri-lo em outro Mac. O release macOS só estará validado após uma execução
-bem-sucedida desse workflow no GitHub.
-
-## Regenerar a bridge
-
-Somente quando a API pública Rust mudar, instale o gerador compatível e execute
-na raiz:
-
-```sh
-cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked
-flutter_rust_bridge_codegen generate
-```
-
-Garanta que o diretório de executáveis do Cargo esteja no `PATH`. A configuração
-está em `flutter_rust_bridge.yaml`; os arquivos gerados ficam em `lib/src/rust/`
-e `rust/src/frb_generated.rs`. Não os edite manualmente. Depois da geração,
-execute as verificações Dart, Rust e o build nativo do host.
+- E2EE está fora do escopo; salas criptografadas não suportam histórico nem envio.
+- Histórico limitado a até 50 eventos recentes, sem paginação; envio apenas de texto.
+- Os releases não têm garantia de assinatura/notarização para distribuição pública;
+  o macOS usa assinatura ad-hoc, sem Developer ID ou notarização.
