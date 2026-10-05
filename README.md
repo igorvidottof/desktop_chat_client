@@ -186,6 +186,15 @@ completo, com executável, bibliotecas e dados. O x64 usa
 pela CI após o build. Cada arquitetura só estará validada após uma execução
 bem-sucedida do respectivo job no GitHub.
 
+O workflow `macOS Release` no GitHub Actions roda manualmente ou em pushes para
+`main` e está configurado para compilar o release ARM64 nativo em Apple Silicon.
+O artefato `desktop-chat-client-macos-arm64` contém o ZIP produzido por `ditto`,
+com o bundle `.app` completo, permissões e metadados; extraia também esse ZIP
+no macOS. O aplicativo não recebe assinatura Developer ID nem notarização
+(a assinatura ad-hoc do projeto é mantida), portanto o Gatekeeper pode alertar
+ao abri-lo em outro Mac. O release macOS só estará validado após uma execução
+bem-sucedida desse workflow no GitHub.
+
 ## Regenerar a bridge
 
 Somente quando a API pública Rust mudar, instale o gerador compatível e execute
