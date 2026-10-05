@@ -50,11 +50,11 @@ void main() {
       );
       expect(
         tester.widget<Text>(find.text('Criptografada')).style!.color,
-        theme.colorScheme.tertiary,
+        theme.colorScheme.error,
       );
       expect(
         tester.widget<Icon>(find.byIcon(Icons.lock_outline)).color,
-        theme.colorScheme.tertiary,
+        theme.colorScheme.error,
       );
       final name = find.text('Uma sala criptografada com nome muito longo');
       expect(
