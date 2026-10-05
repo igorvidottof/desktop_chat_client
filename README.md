@@ -15,13 +15,26 @@ Execute os comandos na raiz do projeto, salvo indicação contrária.
 
 | Componente          | Versão ou configuração do projeto                                                                                          |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Flutter / Dart      | SDK local identificado: Flutter 3.47.6 / Dart 3.13.5; Flutter não está fixado por um gerenciador de versões no repositório |
+| Flutter / Dart      | Flutter 3.47.6 fixado em `.fvmrc`, gerenciado pelo FVM; Dart incluído no SDK Flutter |
 | Rust                | 1.99.0, fixado em `rust/rust-toolchain.toml`, com Rustfmt e Clippy                                                         |
 | Flutter Rust Bridge | 2.13.0 no Dart, Rust e gerador de bindings                                                                                 |
 | Matrix Rust SDK     | 0.19.1, com SQLite embarcado, TLS via Rustls                                                                               |
 | GetX                | 4.7.3 no `pubspec.lock`                                                                                                    |
 
-Instale Flutter e Rust por meio do `rustup`, com os executáveis no `PATH`.
+Instale Rust por meio do `rustup`, com os executáveis no `PATH`.
+O [FVM](https://fvm.app/documentation/getting-started/installation) é obrigatório
+para desenvolver, executar e revisar este projeto. Instale-o antes de continuar
+e coloque `fvm` no `PATH`. No macOS com Homebrew:
+
+```sh
+brew install fvm
+```
+
+Na raiz do projeto, execute `fvm install` para instalar o Flutter 3.47.6 fixado
+em `.fvmrc`. Use `fvm flutter` e `fvm dart` para todos os comandos Flutter/Dart
+do projeto, garantindo que todos usem a mesma versão do SDK. O SDK e os arquivos
+locais de `.fvm/` não são versionados.
+
 `pubspec.lock` e `rust/Cargo.lock` registram as dependências resolvidas. O primeiro
 build precisa de internet para baixar pacotes e a toolchain Rust. Não é necessário
 instalar um servidor Matrix ou guardar credenciais em arquivos do projeto.
@@ -42,10 +55,11 @@ Consulte as instruções oficiais de instalação do Flutter para
 Confira o ambiente e obtenha as dependências:
 
 ```sh
-flutter --version
-flutter doctor -v
-flutter pub get
-flutter devices
+fvm install
+fvm flutter --version
+fvm flutter doctor -v
+fvm flutter pub get
+fvm flutter devices
 ```
 
 Confira a toolchain fixada a partir de `rust/`:
@@ -62,15 +76,15 @@ cd ..
 Use o comando correspondente ao sistema do host:
 
 ```sh
-flutter run -d macos
+fvm flutter run -d macos
 ```
 
 ```sh
-flutter run -d linux
+fvm flutter run -d linux
 ```
 
 ```sh
-flutter run -d windows
+fvm flutter run -d windows
 ```
 
 O build Flutter integra a biblioteca Rust por meio de `rust_builder/`; não há
@@ -80,7 +94,7 @@ caso outra instalação no `PATH` cause falhas:
 
 ```sh
 export PATH="/opt/homebrew/bin:$PATH"
-flutter run -d macos
+fvm flutter run -d macos
 ```
 
 Esse caminho é específico de instalações em `/opt/homebrew`; ajuste-o conforme
@@ -106,9 +120,9 @@ Consulte as [limitações](docs/limitacoes.md) do escopo atual.
 Para alterações Dart, na raiz:
 
 ```sh
-dart format lib/app lib/data lib/domain lib/ui lib/main.dart test
-flutter analyze
-flutter test
+fvm dart format lib/app lib/data lib/domain lib/ui lib/main.dart test
+fvm flutter analyze
+fvm flutter test
 ```
 
 Os testes Dart usam repositórios falsos ou funções da bridge injetadas, sem
@@ -131,15 +145,15 @@ credenciais ou homeserver de produção.
 Para gerar um build, execute na raiz o comando do sistema local:
 
 ```sh
-flutter build macos
+fvm flutter build macos
 ```
 
 ```sh
-flutter build linux
+fvm flutter build linux
 ```
 
 ```sh
-flutter build windows
+fvm flutter build windows
 ```
 
 Cada plataforma precisa ser validada no host correspondente. Esses comandos
