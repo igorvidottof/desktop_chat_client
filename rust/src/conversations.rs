@@ -63,10 +63,12 @@ pub(crate) async fn list() -> Result<Vec<ConversationSummary>, ConversationError
             // Room e eventos permanecem em Rust. display_name consulta o armazenamento
             // do SDK; metadados incompletos não devem invalidar as demais salas.
             let name = room.display_name().await.ok().map(|name| name.to_string());
+            // Usa somente o estado já sincronizado; não inicia consulta nem E2EE.
             summaries.push(summary(
                 room.room_id().to_string(),
                 name,
                 room.num_unread_messages(),
+                room.encryption_state().is_encrypted(),
             ));
         }
         summaries.sort_by(|a, b| a.display_name.cmp(&b.display_name).then(a.id.cmp(&b.id)));
@@ -78,7 +80,12 @@ pub(crate) async fn list() -> Result<Vec<ConversationSummary>, ConversationError
     result
 }
 
-fn summary(id: String, name: Option<String>, unread_message_count: u64) -> ConversationSummary {
+fn summary(
+    id: String,
+    name: Option<String>,
+    unread_message_count: u64,
+    is_encrypted: bool,
+) -> ConversationSummary {
     let display_name = name
         .filter(|name| !name.trim().is_empty())
         .unwrap_or_else(|| "Sala sem nome".to_owned());
@@ -86,6 +93,7 @@ fn summary(id: String, name: Option<String>, unread_message_count: u64) -> Conve
         id,
         display_name,
         unread_message_count: unread_message_count.try_into().unwrap_or(u32::MAX),
+        is_encrypted,
     }
 }
 
@@ -128,18 +136,21 @@ mod tests {
             "opaque fixture / ?".into(),
             Some("<b>Nome remoto</b>".into()),
             7,
+            true,
         );
         assert_eq!(room.id, "opaque fixture / ?");
         assert_eq!(room.display_name, "<b>Nome remoto</b>");
         assert_eq!(room.unread_message_count, 7);
+        assert!(room.is_encrypted);
+        assert!(!summary("opaque".into(), None, 0, false).is_encrypted);
         for name in [None, Some(String::new()), Some(" \n\t".into())] {
             assert_eq!(
-                summary("opaque".into(), name, 0).display_name,
+                summary("opaque".into(), name, 0, false).display_name,
                 "Sala sem nome"
             );
         }
         assert_eq!(
-            summary("opaque".into(), None, u64::MAX).unread_message_count,
+            summary("opaque".into(), None, u64::MAX, false).unread_message_count,
             u32::MAX
         );
     }

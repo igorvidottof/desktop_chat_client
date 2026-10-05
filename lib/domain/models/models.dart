@@ -39,16 +39,21 @@ class ConversationSummary {
   final String id;
   final String displayName;
   final int unreadMessageCount;
+  final bool isEncrypted;
 
   const ConversationSummary({
     required this.id,
     required this.displayName,
     this.unreadMessageCount = 0,
+    this.isEncrypted = false,
   });
 
   @override
   int get hashCode =>
-      id.hashCode ^ displayName.hashCode ^ unreadMessageCount.hashCode;
+      id.hashCode ^
+      displayName.hashCode ^
+      unreadMessageCount.hashCode ^
+      isEncrypted.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -57,7 +62,8 @@ class ConversationSummary {
           runtimeType == other.runtimeType &&
           id == other.id &&
           displayName == other.displayName &&
-          unreadMessageCount == other.unreadMessageCount;
+          unreadMessageCount == other.unreadMessageCount &&
+          isEncrypted == other.isEncrypted;
 }
 
 /// Falhas estáveis sem mensagens, respostas ou objetos de autenticação do SDK.

@@ -126,6 +126,7 @@ void main() {
                 id: 'opaque',
                 displayName: '<Sala>',
                 unreadMessageCount: 12,
+                isEncrypted: true,
               ),
             ],
       ),
@@ -138,6 +139,7 @@ void main() {
         id: 'opaque',
         displayName: '<Sala>',
         unreadMessageCount: 12,
+        isEncrypted: true,
       ),
     );
     expect(() => rooms.clear(), throwsUnsupportedError);

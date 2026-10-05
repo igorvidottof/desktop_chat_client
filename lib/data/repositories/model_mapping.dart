@@ -12,6 +12,7 @@ domain.ConversationSummary mapRoom(native.ConversationSummary value) =>
       id: value.id,
       displayName: value.displayName,
       unreadMessageCount: value.unreadMessageCount,
+      isEncrypted: value.isEncrypted,
     );
 domain.MessageSummary mapMessage(native.MessageSummary value) =>
     domain.MessageSummary(

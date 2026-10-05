@@ -63,6 +63,8 @@ pub struct ConversationSummary {
     pub display_name: String,
     #[frb(default = 0)]
     pub unread_message_count: u32,
+    #[frb(default = false)]
+    pub is_encrypted: bool,
 }
 
 /// Categorias seguras, sem respostas do servidor nem segredos da sessão.

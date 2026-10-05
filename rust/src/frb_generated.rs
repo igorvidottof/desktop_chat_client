@@ -574,10 +574,12 @@ impl SseDecode for crate::api::simple::ConversationSummary {
         let mut var_id = <String>::sse_decode(deserializer);
         let mut var_displayName = <String>::sse_decode(deserializer);
         let mut var_unreadMessageCount = <u32>::sse_decode(deserializer);
+        let mut var_isEncrypted = <bool>::sse_decode(deserializer);
         return crate::api::simple::ConversationSummary {
             id: var_id,
             display_name: var_displayName,
             unread_message_count: var_unreadMessageCount,
+            is_encrypted: var_isEncrypted,
         };
     }
 }
@@ -1051,6 +1053,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::simple::ConversationSummary {
             self.id.into_into_dart().into_dart(),
             self.display_name.into_into_dart().into_dart(),
             self.unread_message_count.into_into_dart().into_dart(),
+            self.is_encrypted.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1521,6 +1524,7 @@ impl SseEncode for crate::api::simple::ConversationSummary {
         <String>::sse_encode(self.id, serializer);
         <String>::sse_encode(self.display_name, serializer);
         <u32>::sse_encode(self.unread_message_count, serializer);
+        <bool>::sse_encode(self.is_encrypted, serializer);
     }
 }
 

@@ -63,17 +63,59 @@ class RoomsView extends StatelessWidget {
                     key: ValueKey(room.id),
                     selected: room.id == state.selected?.id,
                     leading: InitialAvatar(name: room.displayName),
-                    title: Text(
-                      room.displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight:
-                            room.id == state.selected?.id
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                      ),
+                    title: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (room.isEncrypted)
+                          Semantics(
+                            label: 'Sala criptografada',
+                            child: ExcludeSemantics(
+                              child: Padding(
+                                padding: const EdgeInsets.only(bottom: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.lock_outline,
+                                      size: 12,
+                                      color:
+                                          Theme.of(context).colorScheme.error,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        'Criptografada',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.labelSmall?.copyWith(
+                                          color:
+                                              Theme.of(
+                                                context,
+                                              ).colorScheme.error,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        Text(
+                          room.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight:
+                                room.id == state.selected?.id
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                          ),
+                        ),
+                      ],
                     ),
                     trailing:
                         room.unreadMessageCount > 0

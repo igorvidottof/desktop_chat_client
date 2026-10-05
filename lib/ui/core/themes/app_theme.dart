@@ -11,6 +11,7 @@ ThemeData buildAppTheme() {
     onSurface: const Color(0xFF252A32),
     onSurfaceVariant: const Color(0xFF697381),
     outlineVariant: const Color(0xFFE4E7EC),
+    tertiary: const Color(0xFF287D3C),
     secondaryContainer: const Color(0xFFE9EDF2),
     onSecondaryContainer: const Color(0xFF252A32),
   );

@@ -110,6 +110,7 @@ class RoomsViewModel extends GetxController {
           return ConversationSummary(
             id: room.id,
             displayName: room.displayName,
+            isEncrypted: room.isEncrypted,
           );
         }).toList();
     _readCounts.removeWhere((id, _) => !rooms.any((room) => room.id == id));
