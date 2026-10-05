@@ -8,10 +8,13 @@ class ChatViewModel extends GetxController {
   ChatViewModel({
     required this.repository,
     required this.roomId,
+    this.initialUnreadCount = 0,
     bool Function()? sessionIsCurrent,
   }) : _sessionIsCurrent = sessionIsCurrent ?? (() => true);
   final ChatRepository repository;
   final String roomId;
+  final int initialUnreadCount;
+  bool _unreadBoundaryResolved = false;
   final bool Function() _sessionIsCurrent;
   ChatState _state = ChatState();
   ChatState get state => _state;
@@ -99,6 +102,29 @@ class ChatViewModel extends GetxController {
     try {
       final messages = await repository.history(roomId);
       if (!active || generation != _generation) return;
+      // Resolve apenas no primeiro histórico bem-sucedido. Eventos recebidos
+      // após a abertura não fazem parte da contagem capturada na seleção.
+      if (!_unreadBoundaryResolved) {
+        final arrivingIds = {
+          ...state.messages.map((message) => message.id),
+          ..._duringLoad.map((message) => message.id),
+        };
+        final openingHistory =
+            repository
+                .reconcile(messages, const [])
+                .where((message) => !arrivingIds.contains(message.id))
+                .toList();
+        final insufficient = initialUnreadCount > openingHistory.length;
+        state = state.copyWith(
+          firstUnreadMessageId:
+              initialUnreadCount > 0 && !insufficient
+                  ? openingHistory[openingHistory.length - initialUnreadCount]
+                      .id
+                  : null,
+          unreadHistoryInsufficient: insufficient,
+        );
+        _unreadBoundaryResolved = true;
+      }
       state = state.copyWith(
         messages: repository.reconcile(messages, [
           ...state.messages,

@@ -5,6 +5,8 @@ const _unchanged = Object();
 class ChatState {
   ChatState({
     this.loading = true,
+    this.firstUnreadMessageId,
+    this.unreadHistoryInsufficient = false,
     this.refreshing = false,
     this.sending = false,
     List<MessageSummary> messages = const [],
@@ -13,6 +15,8 @@ class ChatState {
     this.sentEventId,
     this.syncStatus = MatrixSyncStatus.connecting,
   }) : messages = List.unmodifiable(messages);
+  final String? firstUnreadMessageId;
+  final bool unreadHistoryInsufficient;
   final bool loading;
   final bool refreshing;
   final bool sending;
@@ -22,6 +26,8 @@ class ChatState {
   final String? sentEventId;
   final MatrixSyncStatus syncStatus;
   ChatState copyWith({
+    Object? firstUnreadMessageId = _unchanged,
+    bool? unreadHistoryInsufficient,
     bool? loading,
     bool? refreshing,
     bool? sending,
@@ -31,6 +37,12 @@ class ChatState {
     Object? sentEventId = _unchanged,
     MatrixSyncStatus? syncStatus,
   }) => ChatState(
+    firstUnreadMessageId:
+        identical(firstUnreadMessageId, _unchanged)
+            ? this.firstUnreadMessageId
+            : firstUnreadMessageId as String?,
+    unreadHistoryInsufficient:
+        unreadHistoryInsufficient ?? this.unreadHistoryInsufficient,
     loading: loading ?? this.loading,
     refreshing: refreshing ?? this.refreshing,
     sending: sending ?? this.sending,

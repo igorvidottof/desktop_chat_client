@@ -98,6 +98,7 @@ class AppBinding extends Bindings {
         ChatViewModel(
           repository: Get.find<ChatRepository>(tag: _tag),
           roomId: id,
+          initialUnreadCount: rooms!.state.selected!.unreadMessageCount,
           sessionIsCurrent: current,
         ),
         tag: _tag,

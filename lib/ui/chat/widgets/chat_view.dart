@@ -20,6 +20,7 @@ class ChatView extends StatefulWidget {
 class _ChatViewState extends State<ChatView> {
   final _composer = TextEditingController();
   final _scroll = ScrollController();
+  final _unreadSliverKey = GlobalKey();
   bool _opened = false;
   late ChatState _previous;
   late final void Function() _removeListener;
@@ -28,9 +29,9 @@ class _ChatViewState extends State<ChatView> {
     super.initState();
     _previous = widget.viewModel.state;
     // A história pode terminar antes de a View montar seu listener.
-    if (!_previous.loading) {
+    if (!_previous.loading && _previous.error == null) {
       _opened = true;
-      _scrollRecent();
+      _scrollOpening();
     }
     _removeListener = widget.viewModel.addListener(() {
       final previous = _previous;
@@ -41,10 +42,12 @@ class _ChatViewState extends State<ChatView> {
         _composer.clear();
         _scrollRecent();
       }
-      if (!_opened && !next.loading) {
+      if (!_opened && !next.loading && next.error == null) {
         _opened = true;
-        _scrollRecent();
-      } else if (previous.messages != next.messages &&
+        _scrollOpening();
+      } else if (_opened &&
+          !next.loading &&
+          previous.messages != next.messages &&
           (!_scroll.hasClients || _scroll.position.extentAfter < 80)) {
         _scrollRecent();
       }
@@ -58,6 +61,88 @@ class _ChatViewState extends State<ChatView> {
     _composer.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _scrollOpening() {
+    if (widget.viewModel.state.firstUnreadMessageId == null) _scrollRecent();
+  }
+
+  Widget _message(ChatState state, int index) => MessageRow(
+    message: state.messages[index],
+    previous:
+        index == 0 || state.messages[index].id == state.firstUnreadMessageId
+            ? null
+            : state.messages[index - 1],
+  );
+
+  Widget _timeline(ChatState state) {
+    final boundary = state.messages.indexWhere(
+      (message) => message.id == state.firstUnreadMessageId,
+    );
+    if (state.firstUnreadMessageId == null) {
+      return ListView.builder(
+        controller: _scroll,
+        padding: const EdgeInsets.fromLTRB(20, 4, 24, 24),
+        itemCount: state.messages.length,
+        itemBuilder: (context, index) => _message(state, index),
+      );
+    }
+    // O centro inicia na fronteira sem estimar alturas nem montar toda a lista.
+    // Se a janela recente remover o evento, não inventamos uma nova fronteira.
+    final start = boundary < 0 ? 0 : boundary;
+    return CustomScrollView(
+      controller: _scroll,
+      center: _unreadSliverKey,
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 24, 0),
+          sliver: SliverList.builder(
+            itemCount: start,
+            itemBuilder: (context, index) => _message(state, start - index - 1),
+          ),
+        ),
+        SliverPadding(
+          key: _unreadSliverKey,
+          padding: const EdgeInsets.fromLTRB(20, 0, 24, 24),
+          sliver: SliverList.builder(
+            itemCount: state.messages.length - start,
+            itemBuilder: (context, index) {
+              final row = _message(state, start + index);
+              if (index != 0 || boundary < 0) return row;
+              final theme = Theme.of(context);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: LayoutTokens.compact,
+                    ),
+                    child: Row(
+                      children: [
+                        const Expanded(child: Divider()),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: LayoutTokens.gap,
+                          ),
+                          child: Text(
+                            'Novas mensagens',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        const Expanded(child: Divider()),
+                      ],
+                    ),
+                  ),
+                  row,
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 
   void _send() => widget.viewModel.sendMessage(_composer.text);
@@ -93,6 +178,14 @@ class _ChatViewState extends State<ChatView> {
                       'A sincronização requer nova autenticação. Saia e entre novamente.',
                     ),
                   if (state.refreshing) const LinearProgressIndicator(),
+                  if (state.unreadHistoryInsufficient)
+                    Padding(
+                      padding: const EdgeInsets.all(LayoutTokens.compact),
+                      child: Text(
+                        'Há mensagens não lidas anteriores ao histórico carregado.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
                   if (state.error != null &&
                       messages.isNotEmpty &&
                       state.error != MessageHistoryError.notAuthenticated)
@@ -149,26 +242,7 @@ class _ChatViewState extends State<ChatView> {
                                   Theme.of(
                                     context,
                                   ).colorScheme.surfaceContainerLowest,
-                              child: SelectionArea(
-                                child: ListView.builder(
-                                  controller: _scroll,
-                                  padding: const EdgeInsets.fromLTRB(
-                                    20,
-                                    4,
-                                    24,
-                                    24,
-                                  ),
-                                  itemCount: messages.length,
-                                  itemBuilder:
-                                      (context, index) => MessageRow(
-                                        message: messages[index],
-                                        previous:
-                                            index == 0
-                                                ? null
-                                                : messages[index - 1],
-                                      ),
-                                ),
-                              ),
+                              child: SelectionArea(child: _timeline(state)),
                             ),
                   ),
                 ],
