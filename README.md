@@ -172,12 +172,19 @@ alinhado ao Cargokit. Após validar e compilar, disponibiliza todo o diretório
 `desktop-chat-client-windows-release`; extraia o conteúdo completo para executar.
 O build Windows só estará validado após uma execução bem-sucedida no GitHub.
 
-O Linux é validado pelo workflow `Linux Release` no GitHub Actions, manualmente
-ou em pushes para `main`. Após uma execução bem-sucedida, baixe o artefato
-`desktop-chat-client-linux-release` na página da execução em Actions: ele contém
-todo o bundle de release de `build/linux/x64/release/bundle/`, incluindo o
-executável, bibliotecas e dados. A validação do build Linux ainda depende da
-primeira execução bem-sucedida no GitHub.
+O workflow `Linux Release` no GitHub Actions roda manualmente ou em pushes
+para `main` e prepara dois releases em runners Linux nativos:
+
+- `desktop-chat-client-linux-x64`: para máquinas Linux Intel/AMD de 64 bits.
+- `desktop-chat-client-linux-arm64`: para máquinas Linux ARM64/aarch64, incluindo
+  VMs Ubuntu ARM em Macs com Apple Silicon.
+
+Após uma execução bem-sucedida, baixe o artefato correspondente na página da
+execução em Actions e extraia todo o conteúdo: cada artefato contém o bundle
+completo, com executável, bibliotecas e dados. O x64 usa
+`build/linux/x64/release/bundle/`; o caminho ARM64 é descoberto e registrado
+pela CI após o build. Cada arquitetura só estará validada após uma execução
+bem-sucedida do respectivo job no GitHub.
 
 ## Regenerar a bridge
 
