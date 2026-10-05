@@ -1,14 +1,15 @@
-# desktop_chat_client
+# Desktop Chat Client 💬
 
-Cliente de mensagens Matrix para desktop (macOS, Windows e Linux), criando em
+Cliente de mensagns Matrix para desktop (macOS, Windows e Linux), criado em
 Flutter. A comunicação Matrix é implementada em Rust com `matrix-sdk` e exposta
 ao Flutter por `flutter_rust_bridge`.
 
 ## Requisitos
 
-- Flutter **3.47.6** no `PATH` (versão registrada em `.fvmrc`).
+- [FVM](https://fvm.app/documentation/getting-started/installation) instalado no `PATH`
+  para gerenciar o Flutter **3.47.6** utilizado no projeto.
 - Rust **stable**, instalado via `rustup`, com Cargo no `PATH`.
-  O build Flutter e a CI usam stable; comandos Cargo locais em `rust/` usam
+  O build Flutter e a CI usam stable enquanto comandos Cargo locais em `rust/` usam
   **1.99.0**, fixado em `rust/rust-toolchain.toml` e instalado pelo rustup.
 - macOS 12 ou superior: Xcode, ferramentas de linha de comando e CocoaPods **1.16.2 ou superior**.
 - Windows: Visual Studio com **Desenvolvimento para desktop com C++**, Rust MSVC
@@ -25,6 +26,7 @@ no Linux. O primeiro build precisa de internet para baixar dependências.
 Na raiz do projeto, usando Flutter 3.47.6:
 
 ```sh
+fvm use
 flutter pub get
 flutter run -d macos
 ```
@@ -37,8 +39,8 @@ flutter run -d linux
 ```
 
 O build Flutter compila e integra Rust automaticamente; os bindings já estão no
-repositório. Informe o homeserver HTTPS **https://matrix.org** (foi o único testado) e uma conta Matrix existente com login
-por senha (se não tiver, crie uma em **https://account.matrix.org/register** se não tiver).
+repositório. Informe o homeserver HTTPS [Matrix.org](https://matrix.org) (foi o único testado) e uma conta Matrix existente com login
+por senha (se não tiver, crie uma no [site oficial](https://account.matrix.org/register)).
 
 ## Funcionalidades implementadas
 
@@ -58,7 +60,7 @@ flutter analyze
 flutter test
 ```
 
-A partir de `rust/`:
+Na pasta `rust/`:
 
 ```sh
 cargo test --locked
@@ -79,8 +81,7 @@ Os workflows GitHub Actions em `.github/workflows/` executam em pushes para
 | Linux      | ARM64                                          | `desktop-chat-client-linux-arm64`     |
 | macOS      | Universal (Apple Silicon arm64 e Intel x86_64) | `desktop-chat-client-macos-universal` |
 
-Para baixar artefatos disponíveis, basta estar conectado ao GitHub e ter acesso
-de leitura ao repositório; não é necessário fazer fork. Acesse **Actions**, abra
+Para baixar artefatos (executores do app) é necessário estar logado no Github. Acesse o [repositório do app](https://github.com/igorvidottof/desktop_chat_client/actions), abra
 uma execução bem-sucedida e baixe o artefato da sua plataforma em **Artifacts**.
 
 Para gerar seus próprios artefatos, faça um fork, habilite os workflows na aba
@@ -93,13 +94,26 @@ interno `desktop-chat-client-macos-universal.zip`, que contém o aplicativo `.ap
 
 ### Windows: runtime ausente
 
-Se aparecer `VCRUNTIME140.dll was not found`, falta o runtime Microsoft Visual C++.
+Ao executar o app no Windows, se aparecer algo como `VCRUNTIME140.dll was not found`, é necessário baixar o runtime Microsoft Visual C++.
 Instale o **Microsoft Visual C++ Redistributable for Visual Studio 2015–2022 (x64)**
-pelo [download oficial da Microsoft](https://aka.ms/vc14/vc_redist.x64.exe) e abra
-o aplicativo novamente. Essa é uma dependência de runtime da Microsoft; não baixe
+pelo [download oficial da Microsoft](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170#latest-supported-redistributable-version) e abra
+o aplicativo novamente. Essa é uma dependência de runtime da Microsoft. Não baixe
 DLLs individuais de sites de terceiros.
 
+## Principais decisões técnicas
+
+- Clara definição de arquitetura descrita abaixo, mantendo Flutter e Rust totalmente separados.
+- Criação de CI pipeline para buildar os apps para todos os sistemas operacionais requeridos a partir dos commits à branch main, evitando assim processos manuais.
+- Credenciais de sessão e dados de restauração são gerenciados no lado nativo/Rust.
+- Tokens e o segredo do armazenamento ficam no cofre do sistema, sem exposição à
+  interface Flutter.
+- A senha de login não é persistida em nenhum local, evitando brechas e possíveis vazamentos.
+
 ## Arquitetura
+
+O projeto segue as [recomendações oficiais de arquitetura do Flutter](https://docs.flutter.dev/app-architecture),
+com Views e ViewModels na camada de UI e Repositories e Services na camada de dados.
+GetX implementa os ViewModels e a composição de dependências.
 
 ```text
 Flutter UI
@@ -113,18 +127,14 @@ flutter_rust_bridge
 Rust / Matrix SDK
 ```
 
-Flutter cuida da apresentação e do estado da interface; Rust cuida da comunicação
+O Flutter cuida da apresentação e do estado da interface, ao passo que o Rust cuida da comunicação
 do protocolo Matrix, sincronização e sessão.
 
-## Segurança
-
-Credenciais de sessão e dados de restauração são gerenciados no lado nativo/Rust.
-Tokens e o segredo do armazenamento ficam no cofre do sistema, sem exposição à
-interface Flutter. A senha de login não é persistida.
+Tomei cuidado para garantir que as responsabilidades não se misturem, mantendo assim uma arquitetura limpa e escalável.
 
 ## Limitações
 
-- E2EE está fora do escopo; salas criptografadas não suportam histórico nem envio.
-- Histórico limitado a até 50 eventos recentes, sem paginação; envio apenas de texto.
-- Os releases não têm garantia de assinatura/notarização para distribuição pública;
-  o macOS usa assinatura ad-hoc, sem Developer ID ou notarização.
+- Tentei implementar E2EE, porém pelo tempo escasso não consegui implementá-lo totalmente, logo, salas criptografadas não suportam histórico nem envio.
+- O histórico é limitado a até 50 eventos recentes, sem paginação e com o envio apenas de textos simples.
+- Algumas melhorias de UI/UX como notificação ao enviar e receber mensagens foram deixadas de lado em prol de configurar o ambiente RUST de maneira segura.
+- Os builds para os sistemas operacionais não foram extensamente testados (o app deve funcionar de maneira fluída para macOS, Windows x64 e Linux Ubuntu 24.04).
