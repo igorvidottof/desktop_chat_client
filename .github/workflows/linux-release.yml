@@ -1,0 +1,86 @@
+name: Linux Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  linux-release:
+    runs-on: ubuntu-24.04
+    env:
+      # Alinha os testes Cargo com a toolchain stable usada pelo Cargokit.
+      RUSTUP_TOOLCHAIN: stable
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.6'
+          channel: stable
+          architecture: x64
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Add Cargo to native build PATH
+        run: echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Cargo availability
+        run: cargo --version
+
+      - name: Install Linux desktop dependencies
+        # D-Bus é exigido pelo keyring com sync-secret-service no Linux.
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            clang \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libgtk-3-dev \
+            liblzma-dev \
+            libdbus-1-dev
+
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter project
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        run: flutter test
+
+      - name: Run Rust tests
+        working-directory: rust
+        run: cargo test --locked
+
+      - name: Build Linux Release
+        run: flutter build linux --release
+
+      - name: Verify Linux Release bundle
+        run: |
+          test -x build/linux/x64/release/bundle/desktop_chat_client
+          test -f build/linux/x64/release/bundle/lib/libflutter_linux_gtk.so
+          test -f build/linux/x64/release/bundle/lib/librust_lib_desktop_chat_client.so
+          test -f build/linux/x64/release/bundle/lib/libapp.so
+          test -f build/linux/x64/release/bundle/data/icudtl.dat
+          test -d build/linux/x64/release/bundle/data/flutter_assets
+
+      - name: Upload complete Linux Release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-chat-client-linux-release
+          path: build/linux/x64/release/bundle/
+          if-no-files-found: error
+          include-hidden-files: true

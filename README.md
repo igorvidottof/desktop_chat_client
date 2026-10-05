@@ -172,6 +172,13 @@ alinhado ao Cargokit. Após validar e compilar, disponibiliza todo o diretório
 `desktop-chat-client-windows-release`; extraia o conteúdo completo para executar.
 O build Windows só estará validado após uma execução bem-sucedida no GitHub.
 
+O Linux é validado pelo workflow `Linux Release` no GitHub Actions, manualmente
+ou em pushes para `main`. Após uma execução bem-sucedida, baixe o artefato
+`desktop-chat-client-linux-release` na página da execução em Actions: ele contém
+todo o bundle de release de `build/linux/x64/release/bundle/`, incluindo o
+executável, bibliotecas e dados. A validação do build Linux ainda depende da
+primeira execução bem-sucedida no GitHub.
+
 ## Regenerar a bridge
 
 Somente quando a API pública Rust mudar, instale o gerador compatível e execute
