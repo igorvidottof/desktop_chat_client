@@ -26,7 +26,7 @@ String messageHistoryErrorMessage(MessageHistoryError error) => switch (error) {
   MessageHistoryError.conversationNotJoined =>
     'Você não participa desta conversa.',
   MessageHistoryError.encryptionUnsupported =>
-    'Não foi possível concluir a operação. Tente novamente.',
+    'Este aplicativo ainda não oferece suporte a salas criptografadas.',
   MessageHistoryError.network =>
     'Não foi possível carregar as mensagens. Verifique a conexão.',
   MessageHistoryError.tls =>
@@ -45,7 +45,7 @@ String sendMessageErrorMessage(SendMessageError error) => switch (error) {
   SendMessageError.conversationNotJoined =>
     'Você não participa desta conversa.',
   SendMessageError.encryptionUnsupported =>
-    'Não foi possível concluir a operação. Tente novamente.',
+    'Este aplicativo ainda não oferece suporte a salas criptografadas.',
   SendMessageError.emptyMessage => 'Digite uma mensagem.',
   SendMessageError.messageTooLong => 'Máximo de 10.000 caracteres Unicode.',
   SendMessageError.sendInProgress =>

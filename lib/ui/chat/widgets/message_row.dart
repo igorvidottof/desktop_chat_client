@@ -48,8 +48,6 @@ class _MessageRowState extends State<MessageRow> {
         sender.startsWith('@') ? sender.substring(1).split(':').first : sender;
     final name = label.isEmpty ? sender : label;
     final initial = name.isEmpty ? '?' : name.characters.first.toUpperCase();
-    final undecryptable =
-        message.body == 'Não foi possível descriptografar esta mensagem.';
     final fullTimestamp = messageTimestamp(message.timestampMs);
     final time =
         fullTimestamp == 'Data indisponível'
@@ -154,14 +152,7 @@ class _MessageRowState extends State<MessageRow> {
                                 message.body,
                                 style: theme.textTheme.bodyLarge?.copyWith(
                                   height: 1.5,
-                                  color:
-                                      undecryptable
-                                          ? colors.onSurfaceVariant
-                                          : colors.onSurface,
-                                  fontStyle:
-                                      undecryptable
-                                          ? FontStyle.italic
-                                          : FontStyle.normal,
+                                  color: colors.onSurface,
                                 ),
                               ),
                             ),

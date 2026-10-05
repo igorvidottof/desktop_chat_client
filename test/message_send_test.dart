@@ -224,61 +224,6 @@ void main() {
     },
   );
 
-  testWidgets(
-    'Encrypted text history uses the normal composer and accepted send',
-    (tester) async {
-      final active = ValueNotifier(true);
-      var sends = 0;
-      var accepted = false;
-      await tester.pumpWidget(
-        screen(
-          active,
-          ({required conversationId, required body}) async {
-            expect(body, 'Mensagem E2EE enviada pelo Flutter');
-            sends++;
-            accepted = true;
-            return const SendMessageResult(eventId: r'$encrypted-send');
-          },
-          load:
-              ({required conversationId}) async => [
-                MessageSummary(
-                  id: r'$encrypted-history',
-                  senderId: '@other:example.org',
-                  body: 'Histórico descriptografado',
-                  timestampMs: 1,
-                  isOwn: false,
-                ),
-                if (accepted)
-                  MessageSummary(
-                    id: r'$encrypted-send',
-                    senderId: '@me:example.org',
-                    body: 'Mensagem E2EE enviada pelo Flutter',
-                    timestampMs: 2,
-                    isOwn: true,
-                  ),
-              ],
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Histórico descriptografado'), findsOneWidget);
-      await tester.enterText(
-        find.byType(TextField),
-        'Mensagem E2EE enviada pelo Flutter',
-      );
-      await tester.pump();
-      await tester.tap(find.text('Enviar'));
-      await tester.pumpAndSettle();
-      expect(sends, 1);
-      expect(find.text('Mensagem E2EE enviada pelo Flutter'), findsOneWidget);
-      expect(
-        tester.widget<TextField>(find.byType(TextField)).controller!.text,
-        isEmpty,
-      );
-      await tester.pumpWidget(const SizedBox());
-      active.dispose();
-    },
-  );
-
   for (final logout in [false, true]) {
     for (final success in [false, true]) {
       testWidgets('Descarta envio após sair/logout ($logout, $success)', (

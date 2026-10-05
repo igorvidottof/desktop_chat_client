@@ -82,11 +82,6 @@ void main() {
                       time: 2,
                       body: 'Mensagem enviada',
                     ),
-                    fixtureMessage(
-                      'encrypted',
-                      time: 3,
-                      body: 'Não foi possível descriptografar esta mensagem.',
-                    ),
                   ];
         await tester.pumpWidget(app(auth, rooms, chat));
         await tester.pumpAndSettle();
@@ -107,10 +102,6 @@ void main() {
           tester.widget<Align>(find.byKey(const ValueKey('own'))).alignment,
           Alignment.centerLeft,
         );
-        final placeholder = tester.widget<Text>(
-          find.text('Não foi possível descriptografar esta mensagem.'),
-        );
-        expect(placeholder.style!.fontStyle, FontStyle.italic);
         expect(find.byType(TextField), findsOneWidget);
         expect(
           tester

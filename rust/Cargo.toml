@@ -8,8 +8,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 flutter_rust_bridge = "=2.13.0"
-matrix-sdk = { version = "=0.19.1", default-features = false, features = ["rustls-aws-lc-rs", "bundled-sqlite", "e2e-encryption"] }
-matrix-sdk-crypto = { version = "=0.19.1", default-features = false }
+matrix-sdk = { version = "=0.19.1", default-features = false, features = ["rustls-aws-lc-rs", "bundled-sqlite"] }
 rustls = { version = "0.23", default-features = false }
 url = "2.5"
 directories = "=6.0.0"
@@ -18,7 +17,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.53", features = ["rt", "macros", "sync", "time"] }
 zeroize = "1.8"
-futures-util = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "=3.6.3", features = ["apple-native"] }

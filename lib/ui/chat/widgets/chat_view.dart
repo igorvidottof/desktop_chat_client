@@ -122,6 +122,18 @@ class _ChatViewState extends State<ChatView> {
                                         MessageHistoryError.notAuthenticated)
                             ? StatePanel(
                               message: messageHistoryErrorMessage(state.error!),
+                              icon:
+                                  state.error ==
+                                          MessageHistoryError
+                                              .encryptionUnsupported
+                                      ? Icons.lock_outline
+                                      : null,
+                              supporting:
+                                  state.error ==
+                                          MessageHistoryError
+                                              .encryptionUnsupported
+                                      ? 'Selecione uma sala sem criptografia para ler e enviar mensagens.'
+                                      : null,
                               retry:
                                   historyRetryable(state.error!)
                                       ? widget.viewModel.load

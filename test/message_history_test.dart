@@ -135,6 +135,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(messageHistoryErrorMessage(error)), findsOneWidget);
       expect(find.text('Nenhuma mensagem ainda.'), findsNothing);
+      if (error == MessageHistoryError.encryptionUnsupported) {
+        expect(find.byIcon(Icons.lock_outline), findsOneWidget);
+        expect(
+          find.text(
+            'Selecione uma sala sem criptografia para ler e enviar mensagens.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.byType(TextField), findsNothing);
+      }
       if (historyRetryable(error)) {
         await tester.tap(find.text('Tentar novamente'));
         await tester.pump();
