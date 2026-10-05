@@ -21,12 +21,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Verify x64 runner architecture
-        run: |
-          runner_arch="$(uname -m)"
-          echo "uname -m: $runner_arch"
-          test "$runner_arch" = x86_64
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -82,132 +76,11 @@ jobs:
           test -f build/linux/x64/release/bundle/lib/libapp.so
           test -f build/linux/x64/release/bundle/data/icudtl.dat
           test -d build/linux/x64/release/bundle/data/flutter_assets
-          for binary in \
-            build/linux/x64/release/bundle/desktop_chat_client \
-            build/linux/x64/release/bundle/lib/librust_lib_desktop_chat_client.so; do
-            description="$(file -Lb "$binary")"
-            echo "$binary: $description"
-            grep -Eq '^ELF 64-bit LSB .*x86-64' <<< "$description"
-          done
 
       - name: Upload complete Linux Release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-chat-client-linux-x64
+          name: desktop-chat-client-linux-release
           path: build/linux/x64/release/bundle/
-          if-no-files-found: error
-          include-hidden-files: true
-
-  linux-release-arm64:
-    # Reutiliza a validação completa do x64 antes de distribuir o bundle ARM64.
-    needs: linux-release
-    runs-on: ubuntu-24.04-arm
-    env:
-      RUSTUP_TOOLCHAIN: stable
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Verify ARM64 runner architecture
-        run: |
-          runner_arch="$(uname -m)"
-          echo "uname -m: $runner_arch"
-          case "$runner_arch" in
-            aarch64|arm64) ;;
-            *) echo "Expected a native ARM64 Linux runner" >&2; exit 1 ;;
-          esac
-
-      - name: Set up Flutter 3.47.6 stable for ARM64
-        # O manifesto Linux 3.47.6 só oferece x64; o bootstrap do SDK baixa Dart ARM64.
-        run: |
-          flutter_sdk="$RUNNER_TEMP/flutter-sdk"
-          git clone --depth 1 --branch 3.47.6 https://github.com/flutter/flutter.git "$flutter_sdk"
-          test "$(git -C "$flutter_sdk" rev-parse HEAD)" = 5fc346839b5d0eef006ed8404392afb4dfae428d
-          git -C "$flutter_sdk" checkout -b stable
-          echo "FLUTTER_ROOT=$flutter_sdk" >> "$GITHUB_ENV"
-          echo "$flutter_sdk/bin" >> "$GITHUB_PATH"
-          echo "$flutter_sdk/bin/cache/dart-sdk/bin" >> "$GITHUB_PATH"
-
-      - name: Verify native Flutter SDK
-        run: |
-          flutter --version --machine > "$RUNNER_TEMP/flutter-version.json"
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          version = json.loads((Path(os.environ["RUNNER_TEMP"]) / "flutter-version.json").read_text())
-          print(version)
-          assert version["frameworkVersion"] == "3.47.6", version
-          assert version["channel"] == "stable", version
-          PY
-          description="$(file -Lb "$FLUTTER_ROOT/bin/cache/dart-sdk/bin/dart")"
-          echo "Dart SDK: $description"
-          grep -Eq '^ELF 64-bit LSB .*ARM aarch64' <<< "$description"
-
-      - name: Set up Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
-
-      - name: Add Cargo to native build PATH
-        run: echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
-
-      - name: Verify native Rust toolchain
-        run: |
-          cargo --version
-          rustc -vV
-          rustc -vV | grep -Fx 'host: aarch64-unknown-linux-gnu'
-
-      - name: Install Linux desktop dependencies
-        # D-Bus é exigido pelo keyring com sync-secret-service no Linux.
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            clang \
-            cmake \
-            ninja-build \
-            pkg-config \
-            libgtk-3-dev \
-            liblzma-dev \
-            libdbus-1-dev
-
-      - name: Resolve Flutter dependencies
-        run: flutter pub get
-
-      - name: Build Linux ARM64 Release
-        run: flutter build linux --release
-
-      - name: Verify Linux ARM64 Release bundle
-        id: bundle
-        # Descobre o caminho gerado e verifica o conteúdo e os binários reais.
-        run: |
-          mapfile -t bundles < <(find build/linux -mindepth 3 -maxdepth 3 -type d -path '*/release/bundle')
-          test "${#bundles[@]}" -eq 1
-          bundle="${bundles[0]}"
-          echo "Flutter ARM64 bundle: $bundle"
-          test -x "$bundle/desktop_chat_client"
-          test -f "$bundle/lib/libflutter_linux_gtk.so"
-          test -f "$bundle/lib/librust_lib_desktop_chat_client.so"
-          test -f "$bundle/lib/libapp.so"
-          test -f "$bundle/data/icudtl.dat"
-          test -d "$bundle/data/flutter_assets"
-          for binary in \
-            "$bundle/desktop_chat_client" \
-            "$bundle/lib/librust_lib_desktop_chat_client.so"; do
-            description="$(file -Lb "$binary")"
-            echo "$binary: $description"
-            grep -Eq '^ELF 64-bit LSB .*ARM aarch64' <<< "$description"
-          done
-          echo "path=$bundle/" >> "$GITHUB_OUTPUT"
-
-      - name: Upload complete Linux ARM64 Release bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-chat-client-linux-arm64
-          path: ${{ steps.bundle.outputs.path }}
           if-no-files-found: error
           include-hidden-files: true
