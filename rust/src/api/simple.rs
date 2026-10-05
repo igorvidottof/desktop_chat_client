@@ -65,6 +65,8 @@ pub struct ConversationSummary {
     pub unread_message_count: u32,
     #[frb(default = false)]
     pub is_encrypted: bool,
+    #[frb(default = false)]
+    pub is_invited: bool,
 }
 
 /// Categorias seguras, sem respostas do servidor nem segredos da sessão.
@@ -81,6 +83,13 @@ pub enum ConversationError {
 /// Lê o retrato do store atualizado pelo único proprietário de sync contínuo.
 pub async fn list_conversations() -> Result<Vec<ConversationSummary>, ConversationError> {
     crate::conversations::list().await
+}
+
+/// Aceita somente um convite conhecido; o SDK mantém sessão e associação em Rust.
+pub async fn accept_room_invitation(
+    conversation_id: String,
+) -> Result<ConversationSummary, ConversationError> {
+    crate::conversations::accept(conversation_id).await
 }
 
 /// Marca a sala como lida com recibo privado, sem divulgar a leitura a outros usuários.

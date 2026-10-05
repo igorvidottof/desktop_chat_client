@@ -16,19 +16,19 @@ class RoomsView extends StatelessWidget {
     autoRemove: false,
     builder: (viewModel) {
       final state = viewModel.state;
-      if (state.loading || (state.refreshing && state.rooms.isEmpty)) {
+      if (state.loading || (state.refreshing && state.isEmpty)) {
         return const StatePanel(
           message: 'Carregando conversas…',
           loading: true,
         );
       }
-      if (state.error != null && state.rooms.isEmpty) {
+      if (state.error != null && state.isEmpty) {
         return StatePanel(
           message: conversationErrorMessage(state.error!),
           retry: viewModel.load,
         );
       }
-      if (state.rooms.isEmpty) {
+      if (state.isEmpty) {
         return const StatePanel(
           message:
               'Nenhuma conversa encontrada. Você ainda não participa de salas.',
@@ -54,9 +54,63 @@ class RoomsView extends StatelessWidget {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(LayoutTokens.compact),
-              itemCount: state.rooms.length,
+              itemCount:
+                  state.invitations.length +
+                  state.rooms.length +
+                  (state.invitations.isEmpty ? 0 : 1),
               itemBuilder: (context, index) {
-                final room = state.rooms[index];
+                if (state.invitations.isNotEmpty) {
+                  if (index == 0) {
+                    return const Padding(
+                      padding: EdgeInsets.all(LayoutTokens.compact),
+                      child: Text('Convites pendentes'),
+                    );
+                  }
+                  if (index <= state.invitations.length) {
+                    final invitation = state.invitations[index - 1];
+                    final accepting = state.accepting.contains(invitation.id);
+                    final error = state.invitationErrors[invitation.id];
+                    return ListTile(
+                      key: ValueKey(invitation.id),
+                      leading: InitialAvatar(name: invitation.displayName),
+                      title: Text(
+                        invitation.displayName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        [
+                          'Você foi convidado',
+                          if (invitation.isEncrypted) 'Criptografada',
+                          if (error != null) invitationErrorMessage(error),
+                        ].join(' · '),
+                      ),
+                      trailing: TextButton(
+                        onPressed:
+                            accepting
+                                ? null
+                                : () =>
+                                    viewModel.acceptInvitation(invitation.id),
+                        child:
+                            accepting
+                                ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    semanticsLabel: 'Aceitando convite',
+                                  ),
+                                )
+                                : const Text('Aceitar'),
+                      ),
+                    );
+                  }
+                }
+                final room =
+                    state.rooms[index -
+                        (state.invitations.isEmpty
+                            ? 0
+                            : state.invitations.length + 1)];
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 4),
                   child: ListTile(

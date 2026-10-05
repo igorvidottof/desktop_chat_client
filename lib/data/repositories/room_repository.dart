@@ -2,6 +2,7 @@ import '../../domain/models/models.dart';
 
 abstract interface class RoomRepository {
   Future<List<ConversationSummary>> load();
+  Future<ConversationSummary> acceptInvitation(String roomId);
   Future<void> markRead(String roomId);
 
   /// A lista local pode estar vazia enquanto o sync inicial ainda não terminou.

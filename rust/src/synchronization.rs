@@ -139,6 +139,11 @@ impl SyncOwner {
         }
     }
 
+    pub(crate) fn invalidate_rooms(&self) {
+        self.hub
+            .emit(self.hub.update(MatrixUpdateKind::ConversationsChanged));
+    }
+
     pub(crate) fn start(&self, client: &Client) {
         let hub = Arc::clone(&self.hub);
         let client = client.clone();
@@ -277,7 +282,8 @@ fn relevant_state(event_type: Option<String>) -> bool {
 }
 
 fn publish_response(client: &Client, hub: &UpdateHub, response: &SyncResponse, initial: bool) {
-    let mut rooms_changed = initial || !response.rooms.left.is_empty();
+    let mut rooms_changed =
+        initial || !response.rooms.left.is_empty() || !response.rooms.invited.is_empty();
     for id in response.rooms.left.keys() {
         let mut event = hub.update(MatrixUpdateKind::ResyncRequired);
         event.conversation_id = Some(id.to_string());
@@ -772,6 +778,31 @@ mod tests {
             receiver.recv().await.unwrap().kind,
             MatrixUpdateKind::ConversationsChanged
         );
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn invitation_only_sync_invalidates_room_list() {
+        let client = Client::builder()
+            .homeserver_url("https://example.invalid")
+            .build()
+            .await
+            .unwrap();
+        let hub = UpdateHub::new();
+        let mut receiver = hub.sender.subscribe();
+        let mut response = SyncResponse::default();
+        response.rooms.invited.insert(
+            matrix_sdk::ruma::room_id!("!invite:example.org").to_owned(),
+            Default::default(),
+        );
+        publish_response(&client, &hub, &response, false);
+        assert_eq!(
+            receiver.recv().await.unwrap().kind,
+            MatrixUpdateKind::ConversationsChanged
+        );
+        assert!(receiver.try_recv().is_err());
+        response.rooms.invited.clear();
+        publish_response(&client, &hub, &response, false);
         assert!(receiver.try_recv().is_err());
     }
 

@@ -18,7 +18,16 @@ void main() {
         FakeAuthRepository()
           ..initializeAction =
               () async => const SessionState(account: fixtureAccount);
-    final rooms = FakeRoomRepository();
+    const invitation = ConversationSummary(
+      id: 'invite',
+      displayName: 'Convite',
+      isInvited: true,
+    );
+    final pendingAccept = Completer<ConversationSummary>();
+    final rooms =
+        FakeRoomRepository()
+          ..loadAction = (() async => [roomA, invitation])
+          ..acceptAction = ((_) => pendingAccept.future);
     final chat = FakeChatRepository();
     final pendingSend = Completer<SendMessageResult>();
     final pendingLogout = Completer<LogoutResult>();
@@ -39,6 +48,8 @@ void main() {
     await settle();
     final conversation = binding.chat!;
     final sending = conversation.sendMessage('synthetic');
+    final roomViewModel = binding.rooms!;
+    final accepting = roomViewModel.acceptInvitation('invite');
     final loggingOut = binding.auth.logout();
     chat.events.add(fixtureUpdate(message: fixtureMessage('stale')));
     expect(conversation.state.messages, isEmpty);
@@ -47,6 +58,14 @@ void main() {
     pendingSend.complete(const SendMessageResult(eventId: 'stale-accepted'));
     expect(await sending, isFalse);
     expect(conversation.state.sentEventId, isNull);
+    final roomState = roomViewModel.state;
+    pendingAccept.complete(
+      const ConversationSummary(id: 'invite', displayName: 'Convite'),
+    );
+    await accepting;
+    expect(roomViewModel.isClosed, isTrue);
+    expect(identical(roomViewModel.state, roomState), isTrue);
+    expect(rooms.events.hasListener, isFalse);
     pendingLogout.complete(
       const LogoutResult(
         remoteStatus: RemoteLogoutStatus.confirmed,

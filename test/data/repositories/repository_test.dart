@@ -15,6 +15,54 @@ const account = native.AccountSummary(
   homeserverAddress: 'https://example.invalid',
 );
 void main() {
+  test(
+    'Rooms mapeia convites, encaminha aceitação e normaliza falhas',
+    () async {
+      const invite = native.ConversationSummary(
+        id: 'invite',
+        displayName: 'Convite',
+        isInvited: true,
+        isEncrypted: true,
+      );
+      final repository = MatrixRoomRepository(
+        MatrixBridgeService(
+          rooms: () async => [invite],
+          acceptInvitation: ({required conversationId}) async {
+            expect(conversationId, 'invite');
+            return const native.ConversationSummary(
+              id: 'invite',
+              displayName: 'Convite',
+              isEncrypted: true,
+            );
+          },
+        ),
+        EmptyMatrixUpdateSource(),
+      );
+      expect((await repository.load()).single.isInvited, isTrue);
+      final joined = await repository.acceptInvitation('invite');
+      expect(joined.isInvited, isFalse);
+      expect(joined.isEncrypted, isTrue);
+      for (final error in [
+        ...native.ConversationError.values,
+        StateError('private'),
+      ]) {
+        final failing = MatrixRoomRepository(
+          MatrixBridgeService(
+            acceptInvitation: ({required conversationId}) async => throw error,
+          ),
+          EmptyMatrixUpdateSource(),
+        );
+        await expectLater(
+          failing.acceptInvitation('invite'),
+          throwsA(
+            error is native.ConversationError
+                ? domain.ConversationError.values.byName(error.name)
+                : domain.ConversationError.internal,
+          ),
+        );
+      }
+    },
+  );
   test('Rooms encaminha leitura e normaliza falhas nativas', () async {
     String? readRoom;
     final repository = MatrixRoomRepository(
