@@ -23,6 +23,8 @@ no Linux. O primeiro build precisa de internet para baixar dependências.
 
 ## Como executar
 
+### 1ª opção - buildando o app
+
 Na raiz do projeto, usando Flutter 3.47.6:
 
 ```sh
@@ -39,7 +41,20 @@ flutter run -d linux
 ```
 
 O build Flutter compila e integra Rust automaticamente; os bindings já estão no
-repositório. Informe o homeserver HTTPS [Matrix.org](https://matrix.org) (foi o único testado) e uma conta Matrix existente com login
+repositório.
+
+### 2ª opção - baixando os artefatos gerados pelos workflows de CI do Github Actions
+
+Para baixar artefatos (executores do app) é necessário estar logado no Github. Acesse o [repositório do app](https://github.com/igorvidottof/desktop_chat_client/actions), abra
+uma execução bem-sucedida e baixe o artefato da sua plataforma em **Artifacts**.
+
+### 3ª opção - baixando uma release diretamente pelas releases do app no Github
+
+Escolha a [release](https://github.com/igorvidottof/desktop_chat_client/releases) de acordo com seu sistema operacional, clique em Assets, baixe o arquivo desktop-chat-client-**[SEU-OS]**.zip, descompacte-o e rode o app em sua máquina.
+
+### IMPORTANTE
+
+Informe o homeserver HTTPS **https://matrix.org** (foi o único testado) e uma conta Matrix existente com login
 por senha (se não tiver, crie uma no [site oficial](https://account.matrix.org/register)).
 
 ## Funcionalidades implementadas
